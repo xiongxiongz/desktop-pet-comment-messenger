@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { DEFAULT_SETTINGS, type PersistedState, type Settings } from './types'
+import { DEFAULT_SETTINGS, type CustomSkin, type CustomSkinFolder, type PersistedState, type Settings, type SkinPlacement } from './types'
 
 const CONFIG_PATH = join(app.getPath('userData'), 'config.json')
 
@@ -16,12 +16,72 @@ function defaultState(): PersistedState {
 function mergeSettings(saved: Partial<Settings> | undefined): Settings {
   const base = structuredClone(DEFAULT_SETTINGS)
   if (!saved) return base
+  // 将旧版仅支持自定义皮肤的调节值迁移到新版的独立皮肤配置中。
+  const legacyCustomPlacement = {
+    scale: saved.customSkinScale ?? base.skinPlacements.custom.scale,
+    offsetX: saved.customSkinOffsetX ?? base.skinPlacements.custom.offsetX,
+    offsetY: saved.customSkinOffsetY ?? base.skinPlacements.custom.offsetY,
+    scaleMode: saved.skinPlacements?.custom?.scaleMode ?? base.skinPlacements.custom.scaleMode
+  }
+  const savedSkins = Array.isArray(saved.customSkins)
+    ? saved.customSkins.filter(
+        (item): item is CustomSkin =>
+          !!item &&
+          typeof item.id === 'string' &&
+          typeof item.name === 'string' &&
+          typeof item.fileName === 'string' &&
+          typeof item.mimeType === 'string' &&
+          typeof item.animated === 'boolean' &&
+          typeof item.createdAt === 'string'
+      )
+    : []
+  // 将老版本的单张皮肤无损迁移到新皮肤库；文件仍由原先的 customSkinFile 指向。
+  const savedFolders = Array.isArray(saved.customSkinFolders)
+    ? saved.customSkinFolders.filter(
+        (item): item is CustomSkinFolder =>
+          !!item && typeof item.id === 'string' && typeof item.name === 'string' && typeof item.createdAt === 'string'
+      )
+    : []
+  const validFolderIds = new Set(savedFolders.map((folder) => folder.id))
+  const migratedLegacySkin: CustomSkin[] =
+    savedSkins.length === 0 && saved.customSkinFile
+      ? [{ id: 'legacy-custom', name: '我的皮肤', folderId: '', shape: 'square', fileName: saved.customSkinFile, mimeType: 'image/png', animated: false, createdAt: '' }]
+      : savedSkins.map((item) => ({
+          ...item,
+          folderId: validFolderIds.has(item.folderId) ? item.folderId : '',
+          shape: item.shape === 'circle' ? 'circle' : 'square'
+        }))
+  const savedSelectedCustomSkinId = saved.selectedCustomSkinId ?? ''
+  const selectedCustomSkinId = migratedLegacySkin.some((item) => item.id === savedSelectedCustomSkinId)
+    ? savedSelectedCustomSkinId
+    : migratedLegacySkin[0]?.id ?? ''
+  const rawCustomPlacements = saved.customSkinPlacements ?? {}
+  const customSkinPlacements: Record<string, SkinPlacement> = {}
+  for (const item of migratedLegacySkin) {
+    const savedPlacement = rawCustomPlacements[item.id]
+    customSkinPlacements[item.id] = {
+      ...legacyCustomPlacement,
+      ...savedPlacement
+    }
+  }
   return {
     ...base,
     ...saved,
     activeWindow: { ...base.activeWindow, ...saved.activeWindow },
     dndWindow: { ...base.dndWindow, ...saved.dndWindow },
     preferredTags: saved.preferredTags?.length ? saved.preferredTags : base.preferredTags,
+    skinPlacements: {
+      ...base.skinPlacements,
+      ...saved.skinPlacements,
+      custom: { ...base.skinPlacements.custom, ...legacyCustomPlacement, ...saved.skinPlacements?.custom },
+      cat: { ...base.skinPlacements.cat, ...saved.skinPlacements?.cat },
+      dog: { ...base.skinPlacements.dog, ...saved.skinPlacements?.dog },
+      robot: { ...base.skinPlacements.robot, ...saved.skinPlacements?.robot }
+    },
+    customSkins: migratedLegacySkin,
+    customSkinFolders: savedFolders,
+    selectedCustomSkinId,
+    customSkinPlacements,
     llm: { ...base.llm, ...saved.llm }
   }
 }

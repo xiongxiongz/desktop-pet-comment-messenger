@@ -2,7 +2,7 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' pet-skin: data:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
     <title>桌宠评论信使</title>
     <link rel="stylesheet" href="./settings.css" />
   </head>
@@ -23,8 +23,49 @@
               <option value="cat">猫</option>
               <option value="dog">狗</option>
               <option value="robot">机器人</option>
+              <option value="custom">DIY皮肤</option>
             </select>
           </label>
+          <div id="customSkinField" class="custom-skin-field" hidden>
+            <div class="skin-library-head">
+              <strong>我的皮肤</strong>
+              <span class="skin-library-head-actions">
+                <button id="btnImportSkin" type="button" class="mini">添加皮肤</button>
+              </span>
+            </div>
+            <div id="skinFolderForm" class="skin-folder-form" hidden>
+              <input id="skinFolderName" type="text" maxlength="24" placeholder="输入新建文件夹名称" aria-label="新建文件夹名称" />
+              <button id="btnConfirmSkinFolder" type="button" class="mini primary">创建</button>
+              <button id="btnCancelSkinFolder" type="button" class="mini">取消</button>
+            </div>
+            <div id="customSkinPreviewStage" class="custom-skin-preview-stage" hidden>
+              <img id="customSkinPreview" class="custom-skin-preview" alt="当前自定义皮肤预览" />
+            </div>
+            <p id="customSkinHint" class="hint"></p>
+            <div id="customSkinLibrary" class="custom-skin-library"></div>
+          </div>
+          <div id="skinAdjustments" class="custom-skin-adjustments">
+            <div class="skin-scale-mode" role="group" aria-label="皮肤缩放方式">
+              <span>缩放方式</span>
+              <div class="skin-scale-mode-buttons">
+                <button id="btnContentScaleMode" type="button" class="mini active" aria-pressed="true">仅缩放图片</button>
+                <button id="btnFrameScaleMode" type="button" class="mini" aria-pressed="false">整体缩放（含限制框）</button>
+              </div>
+            </div>
+            <label>显示大小 <span id="customSkinScaleValue">100%</span>
+              <input id="customSkinScale" type="range" min="50" max="200" step="5" value="100" />
+            </label>
+            <div class="skin-move-row">
+              <span>位置</span>
+              <div class="skin-move-buttons" aria-label="调整皮肤位置">
+                <button id="btnSkinUp" type="button" class="mini" aria-label="向上移动">↑</button>
+                <button id="btnSkinLeft" type="button" class="mini" aria-label="向左移动">←</button>
+                <button id="btnSkinReset" type="button" class="mini">重置</button>
+                <button id="btnSkinRight" type="button" class="mini" aria-label="向右移动">→</button>
+                <button id="btnSkinDown" type="button" class="mini" aria-label="向下移动">↓</button>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section class="card">
@@ -76,6 +117,34 @@
         <span id="saveStatus" class="save-status"></span>
       </div>
     </main>
+    <div id="skinCropDialog" class="skin-crop-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="skinCropTitle">
+      <section class="skin-crop-card">
+        <h2 id="skinCropTitle">调整新皮肤</h2>
+        <p class="hint">在方框内拖动图片，调整到满意的位置后再确认使用。</p>
+        <div id="skinCropStage" class="skin-crop-stage">
+          <img id="skinCropImage" class="skin-crop-image" alt="待确认的自定义皮肤" draggable="false" />
+        </div>
+        <label>皮肤名称
+          <input id="skinCropName" type="text" maxlength="24" placeholder="给这张皮肤起个名字" />
+        </label>
+        <label>保存到文件夹
+          <select id="skinCropFolder" aria-label="保存到皮肤文件夹"></select>
+        </label>
+        <label>显示形状
+          <select id="skinCropShape" aria-label="皮肤显示形状">
+            <option value="square">方形</option>
+            <option value="circle">圆形裁切</option>
+          </select>
+        </label>
+        <label>大小 <span id="skinCropScaleValue">100%</span>
+          <input id="skinCropScale" type="range" min="50" max="200" step="5" value="100" />
+        </label>
+        <div class="skin-crop-actions">
+          <button id="btnCancelSkinCrop" type="button">取消</button>
+          <button id="btnConfirmSkinCrop" type="button" class="primary">确认使用</button>
+        </div>
+      </section>
+    </div>
     <script type="module" src="./settings.ts"></script>
   </body>
 </html>

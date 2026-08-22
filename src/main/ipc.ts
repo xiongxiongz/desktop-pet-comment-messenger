@@ -1,12 +1,20 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
-import { readFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { readFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Comment, FavoriteItem, FilterResult, Settings, SettingsView } from './types'
+import type { Comment, CustomSkinShape, FavoriteItem, FilterResult, Settings, SettingsView, SkinPlacement } from './types'
 import { getState, getSettings, toggleFavorite, updateSettings } from './store'
 import { resolveLlmKey, runFilter } from './filter/pipeline'
 import { setQueue, size as queueSize } from './queue'
 import { scheduler } from './scheduler'
-import { createSettingsWindow, getPetWindow, movePetBy, setPetClickThrough } from './windows'
+import { beginPetDrag, createSettingsWindow, endPetDrag, getPetWindow, movePetToCursor, setPetClickThrough, showPetContextMenu } from './windows'
+import {
+  chooseCustomSkinCandidate,
+  commitCustomSkinCandidate,
+  discardCustomSkinCandidate,
+  getCustomSkinPath,
+  getLibrarySkinUrl
+} from './customSkin'
 
 // 所有 ipcMain 注册集中处；业务逻辑唯一与 renderer 通信的地方。
 
@@ -24,11 +32,37 @@ function loadComments(): Comment[] {
 
 /** 把内部 Settings 转成暴露给 renderer 的安全视图（llm 只给布尔） */
 function toView(s: Settings): SettingsView {
-  const { llm, ...rest } = s
+  const { llm, customSkinFile: _customSkinFile, customSkins, customSkinFolders, ...rest } = s
+  const selected = customSkins.find((item) => item.id === s.selectedCustomSkinId)
+  const folderIds = new Set(customSkinFolders.map((folder) => folder.id))
   return {
     ...rest,
+    customSkins: customSkins
+      .map((item) => {
+        const url = getLibrarySkinUrl(item.id, item)
+        return url ? { id: item.id, name: item.name, folderId: folderIds.has(item.folderId) ? item.folderId : '', shape: item.shape, animated: item.animated, url } : null
+      })
+      .filter((item): item is NonNullable<typeof item> => !!item),
+    customSkinFolders: customSkinFolders.map((folder) => ({ id: folder.id, name: folder.name })),
     llmEnabled: llm.enabled,
-    llmHasKey: !!resolveLlmKey(s)
+    llmHasKey: !!resolveLlmKey(s),
+    customSkinUrl: selected ? getLibrarySkinUrl(selected.id, selected) : null
+  }
+}
+
+function boundedPlacement(placement: Partial<SkinPlacement>): SkinPlacement {
+  return {
+    scale: Math.max(50, Math.min(200, Number(placement.scale) || 100)),
+    offsetX: Math.max(-80, Math.min(80, Number(placement.offsetX) || 0)),
+    offsetY: Math.max(-80, Math.min(80, Number(placement.offsetY) || 0)),
+    scaleMode: placement.scaleMode === 'frame' ? 'frame' : 'content'
+  }
+}
+
+function notifyPetSettingsChanged(next: Settings): void {
+  const petWin = getPetWindow()
+  if (petWin && !petWin.isDestroyed()) {
+    petWin.webContents.send('settings:changed', toView(next))
   }
 }
 
@@ -38,12 +72,147 @@ export function registerIpc(): void {
   ipcMain.handle('settings:save', (_e, patch: Partial<Settings>): SettingsView => {
     const next = updateSettings(patch)
     scheduler.restart() // 设置变更后按新参数立即生效
-    // 通知桌宠窗口刷新名称/皮肤等外观
-    const petWin = getPetWindow()
-    if (petWin && !petWin.isDestroyed()) {
-      petWin.webContents.send('settings:changed', toView(next))
-    }
+    notifyPetSettingsChanged(next)
     return toView(next)
+  })
+
+  ipcMain.handle('skin:choose-custom-candidate', async (e) => {
+    const settingsWindow = BrowserWindow.fromWebContents(e.sender)
+    if (!settingsWindow) return null
+    return chooseCustomSkinCandidate(settingsWindow)
+  })
+
+  ipcMain.handle(
+    'skin:confirm-custom',
+    (_e, payload: { name: string; folderId?: string; shape?: CustomSkinShape; placement: Partial<SkinPlacement> }): SettingsView | null => {
+      const item = commitCustomSkinCandidate(payload?.name ?? '')
+      if (!item) return null
+      const settings = getSettings()
+      const requestedFolderId = typeof payload?.folderId === 'string' ? payload.folderId : ''
+      const targetFolder = settings.customSkinFolders.find((folder) => folder.id === requestedFolderId)
+      const createdFolder = targetFolder
+        ? null
+        : { id: `folder-${randomUUID()}`, name: item.name, createdAt: new Date().toISOString() }
+      const shape: CustomSkinShape = payload?.shape === 'circle' ? 'circle' : 'square'
+      const itemWithFolder = { ...item, folderId: targetFolder?.id ?? createdFolder!.id, shape }
+      const placement = boundedPlacement(payload.placement ?? {})
+      const next = updateSettings({
+        skin: 'custom',
+        customSkinFile: itemWithFolder.fileName,
+        selectedCustomSkinId: itemWithFolder.id,
+        customSkins: [...settings.customSkins, itemWithFolder],
+        customSkinFolders: createdFolder ? [...settings.customSkinFolders, createdFolder] : settings.customSkinFolders,
+        customSkinPlacements: { ...settings.customSkinPlacements, [itemWithFolder.id]: placement },
+        customSkinScale: placement.scale,
+        customSkinOffsetX: placement.offsetX,
+        customSkinOffsetY: placement.offsetY,
+        skinPlacements: { ...settings.skinPlacements, custom: placement }
+      })
+      notifyPetSettingsChanged(next)
+      return toView(next)
+    }
+  )
+
+  ipcMain.handle('skin:discard-custom-candidate', (): void => discardCustomSkinCandidate())
+
+  ipcMain.handle('skin:select', (_e, id: string): SettingsView | null => {
+    const settings = getSettings()
+    const item = settings.customSkins.find((skin) => skin.id === id)
+    if (!item) return null
+    const placement = settings.customSkinPlacements[id] ?? { scale: 100, offsetX: 0, offsetY: 0 }
+    const next = updateSettings({
+      skin: 'custom',
+      customSkinFile: item.fileName,
+      selectedCustomSkinId: id,
+      customSkinScale: placement.scale,
+      customSkinOffsetX: placement.offsetX,
+      customSkinOffsetY: placement.offsetY,
+      skinPlacements: { ...settings.skinPlacements, custom: placement }
+    })
+    notifyPetSettingsChanged(next)
+    return toView(next)
+  })
+
+  ipcMain.handle('skin:rename', (_e, id: string, name: string): SettingsView | null => {
+    const settings = getSettings()
+    const trimmedName = typeof name === 'string' ? name.trim().replace(/[\u0000-\u001f]/g, '').slice(0, 24) : ''
+    if (!trimmedName || !settings.customSkins.some((skin) => skin.id === id)) return null
+    const next = updateSettings({ customSkins: settings.customSkins.map((skin) => (skin.id === id ? { ...skin, name: trimmedName } : skin)) })
+    return toView(next)
+  })
+
+  ipcMain.handle('skin:shape', (_e, id: string, shape: CustomSkinShape): SettingsView | null => {
+    const settings = getSettings()
+    if (!settings.customSkins.some((skin) => skin.id === id) || (shape !== 'square' && shape !== 'circle')) return null
+    const next = updateSettings({ customSkins: settings.customSkins.map((skin) => (skin.id === id ? { ...skin, shape } : skin)) })
+    notifyPetSettingsChanged(next)
+    return toView(next)
+  })
+
+  ipcMain.handle('skin:delete', (_e, id: string): SettingsView | null => {
+    const settings = getSettings()
+    const deleted = settings.customSkins.find((skin) => skin.id === id)
+    if (!deleted) return null
+    const remaining = settings.customSkins.filter((skin) => skin.id !== id)
+    const { [id]: _deletedPlacement, ...customSkinPlacements } = settings.customSkinPlacements
+    const nextSelected = settings.selectedCustomSkinId === id ? remaining[0]?.id ?? '' : settings.selectedCustomSkinId
+    const nextItem = remaining.find((skin) => skin.id === nextSelected)
+    const nextPlacement = nextSelected ? customSkinPlacements[nextSelected] ?? { scale: 100, offsetX: 0, offsetY: 0 } : settings.skinPlacements.custom
+    const next = updateSettings({
+      skin: remaining.length === 0 && settings.skin === 'custom' ? 'cat' : settings.skin,
+      customSkins: remaining,
+      selectedCustomSkinId: nextSelected,
+      customSkinPlacements,
+      customSkinFile: nextItem?.fileName ?? '',
+      skinPlacements: { ...settings.skinPlacements, custom: nextPlacement }
+    })
+    const path = getCustomSkinPath(deleted.fileName)
+    if (path) {
+      try {
+        unlinkSync(path)
+      } catch (err) {
+        console.warn('[skin] 删除皮肤文件失败:', err)
+      }
+    }
+    notifyPetSettingsChanged(next)
+    return toView(next)
+  })
+
+  ipcMain.handle('skin:folder-create', (_e, name: string): SettingsView | null => {
+    const settings = getSettings()
+    const trimmedName = typeof name === 'string' ? name.trim().replace(/[\u0000-\u001f]/g, '').slice(0, 24) : ''
+    if (!trimmedName) return null
+    const next = updateSettings({
+      customSkinFolders: [...settings.customSkinFolders, { id: `folder-${randomUUID()}`, name: trimmedName, createdAt: new Date().toISOString() }]
+    })
+    return toView(next)
+  })
+
+  ipcMain.handle('skin:folder-rename', (_e, id: string, name: string): SettingsView | null => {
+    const settings = getSettings()
+    const trimmedName = typeof name === 'string' ? name.trim().replace(/[\u0000-\u001f]/g, '').slice(0, 24) : ''
+    if (!trimmedName || !settings.customSkinFolders.some((folder) => folder.id === id)) return null
+    return toView(updateSettings({
+      customSkinFolders: settings.customSkinFolders.map((folder) => (folder.id === id ? { ...folder, name: trimmedName } : folder))
+    }))
+  })
+
+  ipcMain.handle('skin:folder-delete', (_e, id: string): SettingsView | null => {
+    const settings = getSettings()
+    if (!settings.customSkinFolders.some((folder) => folder.id === id)) return null
+    return toView(updateSettings({
+      customSkinFolders: settings.customSkinFolders.filter((folder) => folder.id !== id),
+      customSkins: settings.customSkins.map((skin) => (skin.folderId === id ? { ...skin, folderId: '' } : skin))
+    }))
+  })
+
+  ipcMain.handle('skin:move', (_e, skinId: string, folderId: string): SettingsView | null => {
+    const settings = getSettings()
+    const folderExists = folderId === '' || settings.customSkinFolders.some((folder) => folder.id === folderId)
+    if (!folderExists || !settings.customSkins.some((skin) => skin.id === skinId)) return null
+    return toView(updateSettings({
+      customSkins: settings.customSkins.map((skin) => (skin.id === skinId ? { ...skin, folderId } : skin))
+    }))
   })
 
   ipcMain.handle('filter:run', async (): Promise<FilterResult> => {
@@ -57,7 +226,13 @@ export function registerIpc(): void {
 
   ipcMain.on('pet:click-through', (_e, enabled: boolean) => setPetClickThrough(enabled))
 
-  ipcMain.on('pet:move', (_e, dx: number, dy: number) => movePetBy(dx, dy))
+  ipcMain.on('pet:drag-start', (_e, cursorX: number, cursorY: number) => beginPetDrag(cursorX, cursorY))
+
+  ipcMain.on('pet:drag-move', (_e, cursorX: number, cursorY: number) => movePetToCursor(cursorX, cursorY))
+
+  ipcMain.on('pet:drag-end', () => endPetDrag())
+
+  ipcMain.on('pet:context-menu', () => showPetContextMenu())
 
   ipcMain.handle('comment:favorite', (_e, id: string): boolean => toggleFavorite(id))
 

@@ -19,16 +19,43 @@ const btnSkip = document.getElementById('btn-skip') as HTMLButtonElement
 
 let current: PushPayload | null = null
 let bubbleTimer: ReturnType<typeof setTimeout> | null = null
+let hasShownStartupGreeting = false
 
 // ---- 皮肤与名称 ----
 function applySettings(s: SettingsView): void {
-  petBody.innerHTML = getSkinSvg(s.skin as SkinId)
   petName.textContent = s.petName
+  petBody.classList.remove('custom-skin-circle', 'frame-scale')
+  const actualSkin = s.skin === 'custom' && !s.customSkinUrl ? 'cat' : s.skin
+  const placement = s.skinPlacements[actualSkin]
+  const useFrameScale = placement.scaleMode === 'frame'
+  petBody.classList.toggle('frame-scale', useFrameScale)
+  petBody.style.setProperty('--frame-scale', String(useFrameScale ? placement.scale / 100 : 1))
+  petBody.style.setProperty('--skin-scale', String(useFrameScale ? 1 : placement.scale / 100))
+  petBody.style.setProperty('--skin-offset-x', `${placement.offsetX}px`)
+  petBody.style.setProperty('--skin-offset-y', `${placement.offsetY}px`)
+  if (s.skin === 'custom' && s.customSkinUrl) {
+    petBody.classList.add('custom-skin-active')
+    petBody.classList.toggle('custom-skin-circle', s.customSkins.find((item) => item.id === s.selectedCustomSkinId)?.shape === 'circle')
+    const image = document.createElement('img')
+    image.className = 'custom-skin'
+    image.src = s.customSkinUrl
+    image.alt = '自定义桌宠皮肤'
+    petBody.replaceChildren(image)
+    return
+  }
+
+  // 用户选择自定义图片但尚未上传时，保留默认猫作为可见回退。
+  petBody.classList.add('custom-skin-active')
+  petBody.innerHTML = getSkinSvg((s.skin === 'custom' ? 'cat' : s.skin) as SkinId)
 }
 
 async function refreshSettings(): Promise<void> {
   const s = await api.loadSettings()
   applySettings(s)
+  if (!hasShownStartupGreeting) {
+    hasShownStartupGreeting = true
+    showStartupGreeting(s.petName)
+  }
 }
 
 // 设置页保存后，main 广播新设置 → 立即刷新皮肤/名称
@@ -37,49 +64,73 @@ api.onSettingsChanged((s) => applySettings(s))
 // ---- 点击穿透：默认穿透，指针进入桌宠/气泡命中区时放开 ----
 // stage 全窗口透明，实际命中元素是 pet 和 bubble。
 function bindClickThrough(el: HTMLElement): void {
-  el.addEventListener('pointerenter', () => api.setClickThrough(false))
-  el.addEventListener('pointerleave', () => api.setClickThrough(true))
+  // macOS 透明窗口在触摸板辅助点击前不一定派发 pointerenter，
+  // 因此同时监听 over / mouseenter，尽早停止鼠标穿透。
+  const receivePointer = () => api.setClickThrough(false)
+  el.addEventListener('pointerover', receivePointer)
+  el.addEventListener('pointerenter', receivePointer)
+  el.addEventListener('mouseenter', receivePointer)
+  el.addEventListener('pointerleave', () => {
+    // 拖动时窗口会跟着鼠标移动，不能因为暂时离开原命中区而恢复穿透。
+    if (!dragging) api.setClickThrough(true)
+  })
 }
 bindClickThrough(petEl)
 bindClickThrough(bubble)
 
-// ---- 拖拽移动：pointerdown 记起点，pointermove 让 main 移动窗口 ----
+// ---- 拖拽移动：主进程记录窗口起点，按鼠标绝对坐标稳定跟随 ----
 let dragging = false
-let lastX = 0
-let lastY = 0
+let lastContextMenuAt = 0
+
+function openPetContextMenu(e: Event): void {
+  e.preventDefault()
+  e.stopPropagation()
+  // 触摸板辅助点击通常会依次触发 pointerdown、auxclick、contextmenu；只打开一次。
+  if (Date.now() - lastContextMenuAt < 350) return
+  lastContextMenuAt = Date.now()
+  api.setClickThrough(false)
+  api.showPetContextMenu()
+}
 
 petEl.addEventListener('pointerdown', (e) => {
+  if (e.button === 2) {
+    openPetContextMenu(e)
+    return
+  }
+  if (e.button !== 0) return
   dragging = true
-  lastX = e.screenX
-  lastY = e.screenY
+  api.setClickThrough(false)
+  api.beginPetDrag(e.screenX, e.screenY)
   petEl.setPointerCapture(e.pointerId)
 })
 petEl.addEventListener('pointermove', (e) => {
   if (!dragging) return
-  const dx = e.screenX - lastX
-  const dy = e.screenY - lastY
-  lastX = e.screenX
-  lastY = e.screenY
-  if (dx !== 0 || dy !== 0) api.movePet(dx, dy)
+  api.movePetToCursor(e.screenX, e.screenY)
 })
 function endDrag(e: PointerEvent): void {
   if (!dragging) return
   dragging = false
+  api.endPetDrag()
   try {
     petEl.releasePointerCapture(e.pointerId)
   } catch {
     /* ignore */
   }
+  // 松开时只有鼠标不在桌宠或气泡上才恢复透明区域的点击穿透。
+  if (!petEl.matches(':hover') && !bubble.matches(':hover')) api.setClickThrough(true)
 }
 petEl.addEventListener('pointerup', endDrag)
 petEl.addEventListener('pointercancel', endDrag)
 
 // 双击桌宠打开设置
 petEl.addEventListener('dblclick', () => api.openSettings())
+petEl.addEventListener('auxclick', openPetContextMenu)
+petEl.addEventListener('contextmenu', openPetContextMenu)
 
 // ---- 气泡展示 ----
 function showBubble(payload: PushPayload): void {
   current = payload
+  bubble.classList.remove('greeting')
   bubbleTag.textContent = payload.tag
   bubbleLike.textContent = `${payload.kind === 'danmu' ? '弹幕' : '评论'} · 👍 ${payload.likeCount}`
   bubbleText.textContent = payload.text
@@ -93,6 +144,20 @@ function showBubble(payload: PushPayload): void {
   // 自动收起（给足阅读时间）
   if (bubbleTimer) clearTimeout(bubbleTimer)
   bubbleTimer = setTimeout(() => hideBubble(), 15_000)
+}
+
+/** 桌宠窗口启动后只问候一次，不占用评论推送或收藏状态。 */
+function showStartupGreeting(name: string): void {
+  current = null
+  bubble.classList.add('greeting')
+  bubbleTag.textContent = '你好'
+  bubbleLike.textContent = ''
+  bubbleText.textContent = `我是你的个人助手，${name || '朋友'}。`
+  bubbleAuthor.textContent = ''
+  bubbleVideo.textContent = ''
+  bubble.classList.remove('hidden')
+  if (bubbleTimer) clearTimeout(bubbleTimer)
+  bubbleTimer = setTimeout(() => hideBubble(), 6_000)
 }
 
 function hideBubble(): void {
