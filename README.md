@@ -1,6 +1,6 @@
 # 桌宠评论信使 MVP 实现进度
 
-> 活文档：随开发勾选 `[x]` 已完成 / `[ ]` 未完成。计划见 `~/.claude/plans/1-f-joyful-pearl.md`。
+> 活文档：随开发勾选 `[x]` 已完成 / `[ ]` 未完成。
 
 ## 0. 工程脚手架
 - [x] Electron + electron-vite + TS 工程结构、双 tsconfig、electron.vite 配置
