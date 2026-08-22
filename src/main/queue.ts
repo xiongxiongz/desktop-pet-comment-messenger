@@ -4,11 +4,18 @@ import type { CommentTag, TaggedComment } from './types'
 // shownIds（去重记录）与队列同生命周期——都是运行时状态，不落盘；
 // 重启后队列从 comments.json 重建、shownIds 天然为空，二者一致。
 let items: TaggedComment[] = []
+let loaded = false // 是否已至少筛选过一次（区分"没筛选"与"筛了但所选类型无匹配"）
 const shownIds = new Set<string>()
 
 export function setQueue(next: TaggedComment[]): void {
   items = next
+  loaded = true
   shownIds.clear() // 换一批评论即干净重来，整批可重新推送
+}
+
+/** 是否已执行过至少一次筛选（队列可能过滤后为空，故不能用 size 判断） */
+export function isLoaded(): boolean {
+  return loaded
 }
 
 export function markShown(id: string): void {
