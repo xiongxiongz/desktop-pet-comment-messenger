@@ -1,7 +1,7 @@
 import type { BrowserWindow } from 'electron'
-import type { PushPayload, TaggedComment } from './types'
+import type { PushOneResult, PushPayload, TaggedComment } from './types'
 import { getSettings, isFavorited } from './store'
-import { clearShown, hasUnshown, markShown, pickNext } from './queue'
+import { clearShown, hasUnshown, markShown, pickNext, size } from './queue'
 
 // 推送调度器：单个递归 setTimeout，每次间隔随机；门控活跃时段/免打扰/每日上限/去重。
 // 计时器活在 main 进程，通过 webContents.send('comment:show') 推给桌宠窗口。
@@ -79,13 +79,18 @@ export class Scheduler {
     this.timer = setTimeout(() => this.tick(), delayMs)
   }
 
-  /** 手动"来一条"：忽略间隔/上限，仍尊重去重与偏好；无匹配返回 false */
-  pushOne(): boolean {
+  /**
+   * 手动"来一条"：忽略间隔/上限，仍尊重去重与偏好。
+   * ok=已推送；empty=队列空（未筛选）；exhausted=筛了但所选类型无更多可推评论
+   */
+  pushOne(): PushOneResult {
     const settings = getSettings()
     const comment = pickNext(settings.preferredTags)
-    if (!comment) return false
-    this.emit(comment)
-    return true
+    if (comment) {
+      this.emit(comment)
+      return 'ok'
+    }
+    return size() === 0 ? 'empty' : 'exhausted'
   }
 
   private emit(comment: TaggedComment): void {

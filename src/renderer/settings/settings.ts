@@ -689,7 +689,12 @@ btnFilter.addEventListener('click', async () => {
   }
 })
 btnPushOne.addEventListener('click', async () => {
-  if (!(await api.requestOnePush())) filterResult.textContent = '暂无可推送的评论，请先加载并筛选'
+  const res = await api.requestOnePush()
+  if (res === 'empty') {
+    filterResult.textContent = '还没有评论，请先点「加载并筛选评论」'
+  } else if (res === 'exhausted') {
+    filterResult.textContent = '所选类型的评论都推过了，试试勾选更多类型或重新筛选'
+  }
 })
 
 async function renderFavorites(): Promise<void> {

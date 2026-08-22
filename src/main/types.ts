@@ -19,7 +19,6 @@ export interface Comment {
 /** 经流水线分类后的评论 */
 export interface TaggedComment extends Comment {
   tag: CommentTag
-  score: number
   source: 'rule' | 'llm'
 }
 
@@ -34,6 +33,7 @@ export interface LlmSettings {
   apiKey: string
   baseURL: string
   enabled: boolean
+  topK: number // 送 LLM 分类的评论上限（按点赞降序取前 K，控成本）
 }
 
 export type PetSkin = 'cat' | 'dog' | 'robot' | 'custom'
@@ -124,6 +124,9 @@ export interface PersistedState {
   favorites: string[]
 }
 
+/** "来一条"结果：ok=已推送；empty=队列空（未筛选）；exhausted=筛了但所选类型无更多评论 */
+export type PushOneResult = 'ok' | 'empty' | 'exhausted'
+
 /** 传给 renderer 的桌宠气泡负载（不含敏感字段） */
 export interface PushPayload {
   id: string
@@ -193,6 +196,7 @@ export const DEFAULT_SETTINGS: Settings = {
     model: 'glm-5.2',
     apiKey: '',
     baseURL: 'http://llmapi.bilibili.co/v1',
-    enabled: false
+    enabled: true, // 默认启用；无 key 时 pipeline 门控自然回落规则
+    topK: 80
   }
 }

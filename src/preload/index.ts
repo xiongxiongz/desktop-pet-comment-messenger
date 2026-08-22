@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { CandidateSkinView, CustomSkinShape, FavoriteItem, FilterResult, PushPayload, Settings, SettingsView, SkinPlacement } from '../main/types'
+import type { CandidateSkinView, CustomSkinShape,
+  FavoriteItem,
+  FilterResult,
+  PushOneResult,
+  PushPayload,
+  Settings,
+  SettingsView, SkinPlacement
+} from '../main/types'
 
 // window.api 唯一暴露面。key 等敏感信息只在 main，此处不暴露。
 
@@ -21,7 +28,7 @@ const api = {
   deleteCustomSkinFolder: (id: string): Promise<SettingsView | null> => ipcRenderer.invoke('skin:folder-delete', id),
   moveCustomSkin: (skinId: string, folderId: string): Promise<SettingsView | null> => ipcRenderer.invoke('skin:move', skinId, folderId),
   runFilterBatch: (): Promise<FilterResult> => ipcRenderer.invoke('filter:run'),
-  requestOnePush: (): Promise<boolean> => ipcRenderer.invoke('push:one'),
+  requestOnePush: (): Promise<PushOneResult> => ipcRenderer.invoke('push:one'),
   listFavorites: (): Promise<FavoriteItem[]> => ipcRenderer.invoke('favorites:list'),
   closeSettings: (): void => ipcRenderer.send('settings:close-self'),
 

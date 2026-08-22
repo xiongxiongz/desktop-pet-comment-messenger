@@ -2,7 +2,14 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { readFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Comment, CustomSkinShape, FavoriteItem, FilterResult, Settings, SettingsView, SkinPlacement } from './types'
+import type {
+  Comment, CustomSkinShape,
+  FavoriteItem,
+  FilterResult,
+  PushOneResult,
+  Settings,
+  SettingsView, SkinPlacement
+} from './types'
 import { getState, getSettings, toggleFavorite, updateSettings } from './store'
 import { resolveLlmKey, runFilter } from './filter/pipeline'
 import { setQueue, size as queueSize } from './queue'
@@ -222,7 +229,7 @@ export function registerIpc(): void {
     return { filtered: queueSize(), total: outcome.total, usedLlm: outcome.usedLlm }
   })
 
-  ipcMain.handle('push:one', (): boolean => scheduler.pushOne())
+  ipcMain.handle('push:one', (): PushOneResult => scheduler.pushOne())
 
   ipcMain.on('pet:click-through', (_e, enabled: boolean) => setPetClickThrough(enabled))
 
