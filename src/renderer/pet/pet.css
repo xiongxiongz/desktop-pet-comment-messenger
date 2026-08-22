@@ -32,6 +32,7 @@ body {
   flex-direction: column;
   align-items: center;
   cursor: grab;
+  touch-action: none;
 }
 .pet:active {
   cursor: grabbing;
@@ -46,6 +47,7 @@ body {
   margin-bottom: 4px;
   white-space: nowrap;
   backdrop-filter: blur(4px);
+  animation: bob 3s ease-in-out infinite;
 }
 
 .pet-body {
@@ -53,9 +55,33 @@ body {
   height: 110px;
   animation: bob 3s ease-in-out infinite;
 }
+.pet-body.frame-scale {
+  width: calc(110px * var(--frame-scale, 1));
+  height: calc(110px * var(--frame-scale, 1));
+}
+.pet-body.custom-skin-active {
+  overflow: hidden;
+}
+.pet-body.custom-skin-circle {
+  border-radius: 50%;
+}
+.pet-body.custom-skin-circle .custom-skin {
+  object-fit: cover;
+}
 .pet-body svg {
   width: 100%;
   height: 100%;
+  transform: translate(var(--skin-offset-x, 0), var(--skin-offset-y, 0)) scale(var(--skin-scale, 1));
+  transform-origin: center;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.25));
+}
+.custom-skin {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform: translate(var(--skin-offset-x, 0), var(--skin-offset-y, 0)) scale(var(--skin-scale, 1));
+  transform-origin: center;
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.25));
 }
 
@@ -84,6 +110,13 @@ body {
 }
 .bubble.hidden {
   display: none;
+}
+.bubble.greeting .bubble-meta,
+.bubble.greeting .bubble-actions {
+  display: none;
+}
+.bubble.greeting .bubble-header {
+  margin-bottom: 4px;
 }
 
 @keyframes pop {
