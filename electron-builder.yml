@@ -1,0 +1,18 @@
+appId: com.bilibili.fgroup.petmessenger
+productName: 桌宠评论信使
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: src/main/data/comments.json
+    to: comments.json
+mac:
+  target:
+    - target: dmg
+      arch:
+        - universal
+  category: public.app-category.social-networking
+  darkModeSupport: true

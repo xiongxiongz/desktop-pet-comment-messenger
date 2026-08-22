@@ -1,0 +1,27 @@
+{
+  "name": "desktop-pet-comment-messenger",
+  "version": "0.1.0",
+  "description": "桌宠评论信使 — 桌面宠物式评论推送助手 MVP",
+  "main": "./out/main/index.js",
+  "author": "1 班 F 组",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:web": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "build:mac": "electron-vite build && electron-builder --mac --universal"
+  },
+  "dependencies": {
+    "openai": "^4.77.0"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11"
+  }
+}

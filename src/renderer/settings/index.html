@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <title>桌宠评论信使</title>
+    <link rel="stylesheet" href="./settings.css" />
+  </head>
+  <body>
+    <main class="wrap">
+
+      <nav class="tabs">
+        <button id="tabSettings" type="button" class="tab active" data-tab="settings">设置</button>
+        <button id="tabFavorites" type="button" class="tab" data-tab="favorites">收藏</button>
+      </nav>
+
+      <div id="panelSettings" class="panel active">
+        <section class="card">
+          <h2>桌宠</h2>
+          <label>桌宠名称（推荐设置为粉丝称呼）<input id="petName" type="text" maxlength="12" placeholder="如：家人们" /></label>
+          <label>皮肤
+            <select id="skin">
+              <option value="cat">猫</option>
+              <option value="dog">狗</option>
+              <option value="robot">机器人</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="card">
+          <h2>想看的评论类型</h2>
+          <div id="tags" class="tags"></div>
+        </section>
+
+        <section class="card">
+          <h2>推送设置</h2>
+          <label class="row">开启推送<input id="pushEnabled" type="checkbox" /></label>
+          <label>活跃时段
+            <span class="range"><input id="activeStart" type="time" /> — <input id="activeEnd" type="time" /></span>
+          </label>
+          <label>免打扰时段
+            <span class="range"><input id="dndStart" type="time" /> — <input id="dndEnd" type="time" /></span>
+          </label>
+          <label>每日推送上限<input id="dailyCap" type="number" min="1" max="200" /></label>
+          <label>推送间隔（秒）
+            <span class="range"><input id="minInterval" type="number" min="5" /> — <input id="maxInterval" type="number" min="5" /></span>
+          </label>
+        </section>
+
+        <section class="card">
+          <h2>智能分类（可选）</h2>
+          <label class="row">启用大模型分类 (glm-5.2)<input id="llmEnabled" type="checkbox" /></label>
+          <label>网关 API Key<input id="llmKey" type="password" placeholder="留空则用 .env 或纯规则" /></label>
+          <p id="llmHint" class="hint"></p>
+        </section>
+
+        <section class="card">
+          <h2>评论数据</h2>
+          <button id="btnFilter" type="button" class="primary">加载并筛选评论</button>
+          <p id="filterResult" class="result"></p>
+          <button id="btnPushOne" type="button">来一条 →</button>
+        </section>
+      </div>
+
+      <div id="panelFavorites" class="panel">
+        <section class="card">
+          <div class="card-head">
+            <h2>我的收藏</h2>
+            <button id="btnRefreshFav" type="button" class="mini">刷新</button>
+          </div>
+          <div id="favList" class="fav-list"></div>
+        </section>
+      </div>
+
+      <div class="footer">
+        <span id="saveStatus" class="save-status"></span>
+      </div>
+    </main>
+    <script type="module" src="./settings.ts"></script>
+  </body>
+</html>
