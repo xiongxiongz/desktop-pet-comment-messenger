@@ -40,6 +40,8 @@ function applySettings(s: SettingsView): void {
     image.className = 'custom-skin'
     image.src = s.customSkinUrl
     image.alt = '自定义桌宠皮肤'
+    // 图片默认会触发浏览器原生拖拽，导致中间区域无法交给桌宠的长按拖动处理。
+    image.draggable = false
     petBody.replaceChildren(image)
     return
   }
@@ -63,6 +65,13 @@ api.onSettingsChanged((s) => applySettings(s))
 
 // ---- 点击穿透：默认穿透，指针进入桌宠/气泡命中区时放开 ----
 // stage 全窗口透明，实际命中元素是 pet 和 bubble。
+let dragging = false
+let pressPending = false
+let pressTimer: ReturnType<typeof setTimeout> | null = null
+let pressedPointerId: number | null = null
+let pressedCursor: { x: number; y: number } | null = null
+let lastContextMenuAt = 0
+
 function bindClickThrough(el: HTMLElement): void {
   // macOS 透明窗口在触摸板辅助点击前不一定派发 pointerenter，
   // 因此同时监听 over / mouseenter，尽早停止鼠标穿透。
@@ -71,16 +80,25 @@ function bindClickThrough(el: HTMLElement): void {
   el.addEventListener('pointerenter', receivePointer)
   el.addEventListener('mouseenter', receivePointer)
   el.addEventListener('pointerleave', () => {
-    // 拖动时窗口会跟着鼠标移动，不能因为暂时离开原命中区而恢复穿透。
-    if (!dragging) api.setClickThrough(true)
+    // 按住或拖动时窗口会跟着鼠标移动，不能因为暂时离开原命中区而恢复穿透。
+    if (!dragging && !pressPending) api.setClickThrough(true)
   })
 }
 bindClickThrough(petEl)
 bindClickThrough(bubble)
 
-// ---- 拖拽移动：主进程记录窗口起点，按鼠标绝对坐标稳定跟随 ----
-let dragging = false
-let lastContextMenuAt = 0
+// ---- 拖拽移动：所有皮肤统一为“按住 300ms 后拖动” ----
+// 主进程记录窗口起点，按鼠标绝对坐标稳定跟随。
+const LONG_PRESS_DELAY = 300
+
+function clearPendingPress(): void {
+  if (pressTimer) clearTimeout(pressTimer)
+  pressTimer = null
+  pressPending = false
+  pressedPointerId = null
+  pressedCursor = null
+  petEl.classList.remove('long-pressing')
+}
 
 function openPetContextMenu(e: Event): void {
   e.preventDefault()
@@ -98,18 +116,47 @@ petEl.addEventListener('pointerdown', (e) => {
     return
   }
   if (e.button !== 0) return
-  dragging = true
+
+  clearPendingPress()
+  pressPending = true
+  pressedPointerId = e.pointerId
+  pressedCursor = { x: e.screenX, y: e.screenY }
   api.setClickThrough(false)
-  api.beginPetDrag(e.screenX, e.screenY)
   petEl.setPointerCapture(e.pointerId)
+  petEl.classList.add('long-pressing')
+  pressTimer = setTimeout(() => {
+    if (!pressPending || !pressedCursor) return
+    dragging = true
+    pressPending = false
+    pressTimer = null
+    api.beginPetDrag(pressedCursor.x, pressedCursor.y)
+    petEl.classList.remove('long-pressing')
+    petEl.classList.add('dragging')
+  }, LONG_PRESS_DELAY)
 })
 petEl.addEventListener('pointermove', (e) => {
+  if (pressPending && e.pointerId === pressedPointerId) {
+    // 长按期间以最新指针位置作为拖动起点，避免开始拖动时出现跳动。
+    pressedCursor = { x: e.screenX, y: e.screenY }
+  }
   if (!dragging) return
   api.movePetToCursor(e.screenX, e.screenY)
 })
 function endDrag(e: PointerEvent): void {
-  if (!dragging) return
+  if (pressedPointerId !== null && e.pointerId !== pressedPointerId) return
+  const wasDragging = dragging
+  clearPendingPress()
+  if (!wasDragging) {
+    try {
+      petEl.releasePointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
+    }
+    if (!petEl.matches(':hover') && !bubble.matches(':hover')) api.setClickThrough(true)
+    return
+  }
   dragging = false
+  petEl.classList.remove('dragging')
   api.endPetDrag()
   try {
     petEl.releasePointerCapture(e.pointerId)
