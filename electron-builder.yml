@@ -9,6 +9,8 @@ files:
 extraResources:
   - from: src/main/data/comments.json
     to: comments.json
+  - from: local-data/collections.sqlite
+    to: collections.sqlite
 mac:
   target:
     - target: dmg

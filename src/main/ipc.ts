@@ -13,6 +13,7 @@ import type {
 import { getState, getSettings, toggleFavorite, updateSettings } from './store'
 import { resolveLlmKey, runFilter } from './filter/pipeline'
 import { setQueue, size as queueSize } from './queue'
+import { loadCollectedComments } from './collection'
 import { scheduler } from './scheduler'
 import { beginPetDrag, createSettingsWindow, endPetDrag, getPetWindow, movePetToCursor, setPetClickThrough, showPetContextMenu } from './windows'
 import {
@@ -26,6 +27,10 @@ import {
 // 所有 ipcMain 注册集中处；业务逻辑唯一与 renderer 通信的地方。
 
 function loadComments(): Comment[] {
+  // 优先读采集快照（打包后随 dmg 分发的 collections.sqlite；开发期 local-data/collections.sqlite）
+  const collected = loadCollectedComments()
+  if (collected.length) return collected
+  // 回退：未采集时仍用示例数据
   const path = app.isPackaged
     ? join(process.resourcesPath, 'comments.json')
     : join(__dirname, '../../src/main/data/comments.json')
