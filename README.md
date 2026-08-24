@@ -27,6 +27,35 @@
 - [x] 队列 `queue.ts`：内存 TaggedComment[] + 内存 shownIds（与队列同生命周期）+ pickNext
 - [x] 设置页"加载并筛选评论"显示"已从 N 条中筛选出 M 条"
 
+## 3.1 首次采集与本地库
+- [x] 评论通过 WBI 游标接口采集全部可见根评论
+- [x] 弹幕通过 `dm/web/view` 获取分段数，再循环 `dm/web/seg.so`
+- [x] 采集结果写入本地 SQLite，不再以 JSON 作为正式存储
+- [x] 评论、弹幕、视频元数据、采集批次分表保存；评论额外保存回复数和可见状态；重复采集按平台 ID 更新，不因接口暂时不返回而删除旧数据
+- [x] 运行：`npm run collect:initial -- --bvid=BV1xV8j6eEUR`
+- [x] 数据库：`local-data/collections.sqlite`（已加入 `.gitignore`）
+
+## 3.2 采集数据提供层
+- [x] `src/main/collection/data-provider.ts` 提供只读 SQLite 查询接口
+- [x] `listItems()` 统一读取评论和弹幕，支持按视频、类型、发布时间、分页查询
+- [x] `listComments()` / `listDanmaku()` 保留各自完整字段
+- [x] `listVideos()` 查询视频、分 P 和数量汇总；`listRuns()` 查询采集批次
+- [x] 提供层不创建、不修改数据库，也不包含筛选、推送逻辑
+
+后续模块只需要传入数据库路径：
+
+```ts
+import { openCollectionDataProvider } from './collection/data-provider'
+
+const provider = openCollectionDataProvider(databasePath)
+try {
+  const items = provider.listItems({ bvid, limit: 100 })
+  // items: CollectedItem[]，每项是 CollectedComment 或 CollectedDanmaku
+} finally {
+  provider.close()
+}
+```
+
 ## 4. LLM 分类（默认主力，可回退）
 - [x] `openai` 客户端接 bilibili 网关（`glm-5.2`，懒加载）
 - [x] key 双来源注入（设置页 > `.env`）、优先级与空值降级
@@ -70,3 +99,4 @@
 - 2026-08-22 同步功能清单：模块 2 补 tab、模块 3/5 去重描述改为内存态、模块 6 补视频来源/收藏 tab/名称合并，反映最新代码状态。
 - 2026-08-22 LLM 升为主力 + 成本控制：讨论否决"LLM 回填 keywords.ts"的自动闭环（逻辑自相矛盾、无法反推判别词、规则天花板是语境非词量）。识别真 bug——`pipeline.ts` 规则先硬过滤，LLM 只能给规则已分类的评论重贴标签，看不到规则漏判的评论。改为分支结构：LLM 激活（`enabled && key`）时看全部评论、规则退纯 fallback。纠正"glm-5.2 免费额度"的错误前提（有成本），加两个护栏：Top-K 预裁剪（点赞降序取前 `topK`=80，成本上限固定）+ id→tag 内存缓存（重新筛选零重复调用）；prompt 增「无关」类过滤噪声。改动 `types.ts`（enabled=true、topK）/`pipeline.ts`（分支+topK+cache）/`llmClassifier.ts`（prompt）。不做 token 分批（1M 上下文足够）。typecheck + build 通过。
 - 2026-08-22 治本重构（shownIds 生命周期归位）：识别根因是数据分层错位——`shownIds` 持久化到 `config.json`，但它引用的队列是纯内存、重启从 comments.json 重建，导致"指针比队列活得久"、重启后 split-brain。方案：把推送运行时状态（`shownIds`/`dailyCount`/`currentDay`）全部移入内存，`config.json` 只留 `settings`+`favorites`。改动：`types.ts` PersistedState 精简为两字段；`store.ts` 删除 markShown/resetShown/resetIfNewDay 及 shownIds/resetDate；`queue.ts` 内置 `shownIds: Set`，setQueue 自动 clear，新增 markShown/clearShown；`scheduler.ts` 内存 currentDay 做跨天重置；`ipc.ts` 去掉 resetShown 调用。typecheck + build 通过。
+- 2026-08-23 首次采集改用 SQLite：新增 `videos`、`video_pages`、`comments`、`danmaku`、`collection_runs` 表；实测 `BV1xV8j6eEUR` 写入 296 条评论、497 条弹幕。采集库与筛选/推送逻辑分离。
