@@ -134,10 +134,42 @@ function isAnimatedImage(bytes: Buffer, extension: string): boolean {
   return extension === '.gif' || (extension === '.png' && isAnimatedPng(bytes)) || (extension === '.webp' && isAnimatedWebp(bytes))
 }
 
-function validateImageDimensions(bytes: Buffer): void {
+/** 从 WebP 文件头解析画布尺寸，覆盖 VP8X（含动图）/VP8/VP8L 三种子格式。 */
+function readWebpSize(bytes: Buffer): { width: number; height: number } | null {
+  if (bytes.length < 30) return null
+  const fourCC = bytes.subarray(12, 16).toString('latin1')
+  if (fourCC === 'VP8X') {
+    const width = 1 + (bytes[24] | (bytes[25] << 8) | (bytes[26] << 16))
+    const height = 1 + (bytes[27] | (bytes[28] << 8) | (bytes[29] << 16))
+    return { width, height }
+  }
+  if (fourCC === 'VP8 ' && bytes[23] === 0x9d && bytes[24] === 0x01 && bytes[25] === 0x2a) {
+    return { width: bytes.readUInt16LE(26) & 0x3fff, height: bytes.readUInt16LE(28) & 0x3fff }
+  }
+  if (fourCC === 'VP8L' && bytes[20] === 0x2f) {
+    const bits = bytes.readUInt32LE(21)
+    return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 }
+  }
+  return null
+}
+
+/** GIF/WebP 从文件头读尺寸（Electron nativeImage 不解码这两种格式），其余交给 nativeImage。 */
+function readImageSize(bytes: Buffer, extension: string): { width: number; height: number } {
+  if (extension === '.gif' && bytes.length >= 10) {
+    return { width: bytes.readUInt16LE(6), height: bytes.readUInt16LE(8) }
+  }
+  if (extension === '.webp') {
+    const size = readWebpSize(bytes)
+    if (size) return size
+  }
   const image = nativeImage.createFromBuffer(bytes)
   const { width, height } = image.getSize()
   if (image.isEmpty() || width < 1 || height < 1) throw new Error('无法读取这张图片，请换一张完整的图片')
+  return { width, height }
+}
+
+function validateImageDimensions(bytes: Buffer, extension: string): void {
+  const { width, height } = readImageSize(bytes, extension)
   if (width * height > MAX_SKIN_PIXELS) throw new Error('图片分辨率过大，请选择 1600 万像素以内的图片')
 }
 
@@ -216,7 +248,8 @@ function cropTransparentPadding(bitmap: Buffer, width: number, height: number): 
 function makeTransparentSkin(bytes: Buffer): Buffer {
   const image = nativeImage.createFromBuffer(bytes)
   const { width, height } = image.getSize()
-  validateImageDimensions(bytes)
+  if (image.isEmpty() || width < 1 || height < 1) throw new Error('无法读取这张图片，请换一张完整的图片')
+  if (width * height > MAX_SKIN_PIXELS) throw new Error('图片分辨率过大，请选择 1600 万像素以内的图片')
   const bitmap = Buffer.from(image.toBitmap())
   removeConnectedWhiteBackground(bitmap, width, height)
   const cropped = cropTransparentPadding(bitmap, width, height)
@@ -250,7 +283,7 @@ export async function chooseCustomSkinCandidate(parent: BrowserWindow): Promise<
   if (sourceInfo.size === 0 || sourceInfo.size > MAX_SKIN_BYTES) throw new Error('图片大小需介于 1 字节和 5 MB 之间')
   const bytes = readFileSync(sourcePath)
   if (!hasExpectedImageSignature(bytes, extension)) throw new Error('图片格式与文件扩展名不匹配')
-  validateImageDimensions(bytes)
+  validateImageDimensions(bytes, extension)
   const animated = isAnimatedImage(bytes, extension)
   const finalExtension = animated ? extension : '.png'
   const candidateFileName = candidateFileNameFor(finalExtension)

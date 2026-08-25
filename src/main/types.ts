@@ -36,7 +36,7 @@ export interface LlmSettings {
   topK: number // 送 LLM 分类的评论上限（按点赞降序取前 K，控成本）
 }
 
-export type PetSkin = 'cat' | 'dog' | 'robot' | 'custom'
+export type PetSkin = 'cat' | 'dog' | 'robot' | 'gif' | 'custom'
 
 /** 大小滑块作用于图片内容，或同时作用于图片所在的显示框。 */
 export type SkinScaleMode = 'content' | 'frame'
@@ -169,7 +169,7 @@ export interface SettingsView extends Omit<Settings, 'llm' | 'customSkinFile' | 
 
 export const DEFAULT_SETTINGS: Settings = {
   petName: '朋友',
-  skin: 'cat',
+  skin: 'gif',
   customSkinFile: '',
   customSkinScale: 100,
   customSkinOffsetX: 0,
@@ -178,6 +178,7 @@ export const DEFAULT_SETTINGS: Settings = {
     cat: { scale: 100, offsetX: 0, offsetY: 0, scaleMode: 'content' },
     dog: { scale: 100, offsetX: 0, offsetY: 0, scaleMode: 'content' },
     robot: { scale: 100, offsetX: 0, offsetY: 0, scaleMode: 'content' },
+    gif: { scale: 100, offsetX: 0, offsetY: 0, scaleMode: 'frame' },
     custom: { scale: 100, offsetX: 0, offsetY: 0, scaleMode: 'content' }
   },
   customSkins: [],

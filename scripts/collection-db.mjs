@@ -80,7 +80,9 @@ export function openCollectionDatabase(dbPath) {
   mkdirSync(dirname(dbPath), { recursive: true })
   const db = new Database(dbPath)
   db.pragma('foreign_keys = ON')
-  db.pragma('journal_mode = WAL')
+  // DELETE（经典 rollback）而非 WAL：本库作为只读快照打进 dmg，
+  // WAL 库即便只读打开也要在旁创建 -wal/-shm 边车文件，在只读的 Resources 目录会失败。
+  db.pragma('journal_mode = DELETE')
   db.exec(SCHEMA)
 
   const upsertVideo = db.prepare(`

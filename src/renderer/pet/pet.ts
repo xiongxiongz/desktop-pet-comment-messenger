@@ -1,5 +1,6 @@
 import type { PushPayload, SettingsView } from '../../main/types'
 import { getSkinSvg, type SkinId } from './skins'
+import defaultPetGif from './assets/aige.gif'
 
 const api = window.api
 
@@ -33,6 +34,18 @@ function applySettings(s: SettingsView): void {
   petBody.style.setProperty('--skin-scale', String(useFrameScale ? 1 : placement.scale / 100))
   petBody.style.setProperty('--skin-offset-x', `${placement.offsetX}px`)
   petBody.style.setProperty('--skin-offset-y', `${placement.offsetY}px`)
+  if (s.skin === 'gif') {
+    // 内置动图皮肤：复用 .custom-skin 的 object-fit / transform 变量，GIF 由 <img> 原生播放。
+    petBody.classList.add('custom-skin-active')
+    const image = document.createElement('img')
+    image.className = 'custom-skin'
+    image.src = defaultPetGif
+    image.alt = '默认动图皮肤'
+    image.draggable = false
+    petBody.replaceChildren(image)
+    return
+  }
+
   if (s.skin === 'custom' && s.customSkinUrl) {
     petBody.classList.add('custom-skin-active')
     petBody.classList.toggle('custom-skin-circle', s.customSkins.find((item) => item.id === s.selectedCustomSkinId)?.shape === 'circle')

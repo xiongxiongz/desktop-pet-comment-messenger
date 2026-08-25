@@ -76,7 +76,8 @@ function mergeSettings(saved: Partial<Settings> | undefined): Settings {
       custom: { ...base.skinPlacements.custom, ...legacyCustomPlacement, ...saved.skinPlacements?.custom },
       cat: { ...base.skinPlacements.cat, ...saved.skinPlacements?.cat },
       dog: { ...base.skinPlacements.dog, ...saved.skinPlacements?.dog },
-      robot: { ...base.skinPlacements.robot, ...saved.skinPlacements?.robot }
+      robot: { ...base.skinPlacements.robot, ...saved.skinPlacements?.robot },
+      gif: { ...base.skinPlacements.gif, ...saved.skinPlacements?.gif }
     },
     customSkins: migratedLegacySkin,
     customSkinFolders: savedFolders,
