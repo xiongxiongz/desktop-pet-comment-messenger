@@ -83,7 +83,13 @@ function mergeSettings(saved: Partial<Settings> | undefined): Settings {
     customSkinFolders: savedFolders,
     selectedCustomSkinId,
     customSkinPlacements,
-    llm: { ...base.llm, ...saved.llm }
+    // LLM 分类成本上限固定为前 10 条；同时把旧版本保存的 20/80 等值迁移下来。
+    llm: {
+      ...base.llm,
+      ...saved.llm,
+      topK: Math.min(10, Math.max(1, Number(saved.llm?.topK) || base.llm.topK))
+    },
+    aiReaction: { ...base.aiReaction, ...saved.aiReaction }
   }
 }
 

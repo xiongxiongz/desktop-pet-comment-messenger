@@ -10,7 +10,7 @@ const PET_WIDTH = 360
 const PET_HEIGHT = 480
 const PET_EDGE_VISIBLE_RATIO = 0.2
 // 桌宠本体在 360px 透明窗口中的实际布局，需与 pet.css 的 .pet 保持一致。
-const PET_CONTENT_WIDTH = 120
+const PET_CONTENT_WIDTH = 160
 const PET_CONTENT_RIGHT_GAP = 24
 
 let petWin: BrowserWindow | null = null

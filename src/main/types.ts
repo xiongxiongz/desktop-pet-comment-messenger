@@ -20,6 +20,7 @@ export interface Comment {
 export interface TaggedComment extends Comment {
   tag: CommentTag
   source: 'rule' | 'llm'
+  reaction?: ReactionSpec
 }
 
 export interface TimeWindow {
@@ -34,6 +35,33 @@ export interface LlmSettings {
   baseURL: string
   enabled: boolean
   topK: number // 送 LLM 分类的评论上限（按点赞降序取前 K，控成本）
+}
+
+export type ReactionIntent = 'action' | 'emotion' | 'expression' | 'scene' | 'interaction' | 'other'
+
+export interface ReactionSpec {
+  shouldGenerate: boolean
+  intents: ReactionIntent[]
+  visualPrompt: string
+}
+
+export interface AiReactionProgress {
+  phase: 'idle' | 'analyzing' | 'generating' | 'complete'
+  completed: number
+  total: number
+  failed: number
+}
+
+export interface LlmOperationLog {
+  id: number
+  operation: string
+  model: string
+  commentIds: string[]
+  input: string
+  prompt: string
+  result: string
+  error: string
+  createdAt: string
 }
 
 export type PetSkin = 'cat' | 'dog' | 'robot' | 'gif' | 'custom'
@@ -117,6 +145,11 @@ export interface Settings {
   minIntervalSec: number
   maxIntervalSec: number
   llm: LlmSettings
+  aiReaction: {
+    enabled: boolean
+    referenceFile: string
+    demoMode: boolean
+  }
 }
 
 export interface PersistedState {
@@ -137,6 +170,7 @@ export interface PushPayload {
   likeCount: number
   kind: 'comment' | 'danmu'
   favorited: boolean
+  reactionImageUrl?: string
 }
 
 /** 设置页拿到的筛选汇总 */
@@ -144,6 +178,8 @@ export interface FilterResult {
   filtered: number
   total: number
   usedLlm: boolean
+  /** 走 LLM 分支却失败时的原因（如 'API Key 无效'），用于 UI 明确回退原因 */
+  llmError?: string
 }
 
 /** 收藏列表项（设置页展示用） */
@@ -158,13 +194,17 @@ export interface FavoriteItem {
 }
 
 /** 暴露给 renderer 的安全设置视图（llm 只给布尔） */
-export interface SettingsView extends Omit<Settings, 'llm' | 'customSkinFile' | 'customSkins' | 'customSkinFolders'> {
+export interface SettingsView extends Omit<Settings, 'llm' | 'customSkinFile' | 'customSkins' | 'customSkinFolders' | 'aiReaction'> {
   customSkins: CustomSkinView[]
   customSkinFolders: CustomSkinFolderView[]
   llmEnabled: boolean
   llmHasKey: boolean
   /** 仅供 renderer 显示当前皮肤的受控地址，不暴露本机文件路径。 */
   customSkinUrl: string | null
+  aiReactionEnabled: boolean
+  aiReactionHasReference: boolean
+  aiReactionReferenceUrl: string | null
+  aiReactionDemoMode: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -175,11 +215,11 @@ export const DEFAULT_SETTINGS: Settings = {
   customSkinOffsetX: 0,
   customSkinOffsetY: 0,
   skinPlacements: {
-    cat: { scale: 100, offsetX: 0, offsetY: 0, scaleMode: 'content' },
-    dog: { scale: 100, offsetX: 0, offsetY: 0, scaleMode: 'content' },
-    robot: { scale: 100, offsetX: 0, offsetY: 0, scaleMode: 'content' },
+    cat: { scale: 100, offsetX: 0, offsetY: 0, scaleMode: 'frame' },
+    dog: { scale: 100, offsetX: 0, offsetY: 0, scaleMode: 'frame' },
+    robot: { scale: 100, offsetX: 0, offsetY: 0, scaleMode: 'frame' },
     gif: { scale: 100, offsetX: 0, offsetY: 0, scaleMode: 'frame' },
-    custom: { scale: 100, offsetX: 0, offsetY: 0, scaleMode: 'content' }
+    custom: { scale: 100, offsetX: 0, offsetY: 0, scaleMode: 'frame' }
   },
   customSkins: [],
   customSkinFolders: [],
@@ -198,6 +238,7 @@ export const DEFAULT_SETTINGS: Settings = {
     apiKey: '',
     baseURL: 'http://llmapi.bilibili.co/v1',
     enabled: true, // 默认启用；无 key 时 pipeline 门控自然回落规则
-    topK: 80
-  }
+    topK: 10
+  },
+  aiReaction: { enabled: false, referenceFile: 'reference.png', demoMode: false }
 }

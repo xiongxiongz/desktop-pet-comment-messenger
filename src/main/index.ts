@@ -4,7 +4,8 @@ import { loadState } from './store'
 import { registerIpc } from './ipc'
 import { createPetWindow, getPetWindow, showPetWindow } from './windows'
 import { scheduler } from './scheduler'
-import { getCandidateSkinMimeType, getCandidateSkinPath, getCustomSkinMimeType, getCustomSkinPath } from './customSkin'
+import { getCandidateSkinPath, getCustomSkinMimeType, getCustomSkinPath } from './customSkin'
+import { getReactionDbImage, getReactionPath, getReferencePath } from './aiReaction'
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'pet-skin', privileges: { standard: true, secure: true, supportFetchAPI: true } }
@@ -14,17 +15,18 @@ function registerCustomSkinProtocol(): void {
   protocol.handle('pet-skin', (request) => {
     const url = new URL(request.url)
     const host = url.hostname
-    if (host !== 'library' && host !== 'candidate') return new Response('Not found', { status: 404 })
+    if (host !== 'library' && host !== 'candidate' && host !== 'reaction' && host !== 'ai-reference') return new Response('Not found', { status: 404 })
 
     const settings = loadState().settings
     const id = decodeURIComponent(url.pathname.slice(1))
     const item = host === 'library' && /^[a-zA-Z0-9-]{1,80}$/.test(id) ? settings.customSkins.find((skin) => skin.id === id) : null
-    const path = host === 'candidate' ? getCandidateSkinPath() : item ? getCustomSkinPath(item.fileName) : null
-    const mime = host === 'candidate' ? getCandidateSkinMimeType() : item ? getCustomSkinMimeType(item.fileName) : null
-    if (!path || !mime) return new Response('Not found', { status: 404 })
+    const reactionBytes = host === 'reaction' ? getReactionDbImage(id.replace(/\.png$/, '')) : null
+    const path = host === 'candidate' ? getCandidateSkinPath() : host === 'reaction' ? getReactionPath(id) : host === 'ai-reference' ? getReferencePath(settings) : item ? getCustomSkinPath(item.fileName) : null
+    const mime = host === 'candidate' || host === 'reaction' || host === 'ai-reference' ? 'image/png' : item ? getCustomSkinMimeType(item.fileName) : null
+    if (!path && !reactionBytes || !mime) return new Response('Not found', { status: 404 })
 
     try {
-      return new Response(readFileSync(path), {
+      return new Response(reactionBytes ?? readFileSync(path!), {
         headers: { 'content-type': mime, 'cache-control': 'no-store' }
       })
     } catch {

@@ -2,6 +2,7 @@ import type { BrowserWindow } from 'electron'
 import type { PushOneResult, PushPayload, TaggedComment } from './types'
 import { getSettings, isFavorited } from './store'
 import { clearShown, hasUnshown, isLoaded, markShown, pickNext } from './queue'
+import { getReactionUrl } from './aiReaction'
 
 // 推送调度器：单个递归 setTimeout，每次间隔随机；门控活跃时段/免打扰/每日上限/去重。
 // 计时器活在 main 进程，通过 webContents.send('comment:show') 推给桌宠窗口。
@@ -24,6 +25,7 @@ function inWindow(win: { start: string; end: string }, cur: number): boolean {
 }
 
 function toPayload(c: TaggedComment): PushPayload {
+  const settings = getSettings()
   return {
     id: c.id,
     author: c.author,
@@ -32,7 +34,8 @@ function toPayload(c: TaggedComment): PushPayload {
     tag: c.tag,
     likeCount: c.likeCount,
     kind: c.kind,
-    favorited: isFavorited(c.id)
+    favorited: isFavorited(c.id),
+    reactionImageUrl: getReactionUrl(c, settings) ?? undefined
   }
 }
 
@@ -85,7 +88,8 @@ export class Scheduler {
    */
   pushOne(): PushOneResult {
     const settings = getSettings()
-    const comment = pickNext(settings.preferredTags)
+    const eligible = settings.aiReaction.demoMode ? (c: TaggedComment) => !!getReactionUrl(c, settings) : undefined
+    const comment = pickNext(settings.preferredTags, eligible)
     if (comment) {
       this.emit(comment)
       return 'ok'
@@ -127,10 +131,11 @@ export class Scheduler {
     if (this.dailyCount >= settings.dailyCap) return this.reschedule(RECHECK_MS)
 
     // 5) 无匹配未展示评论 → 不推空内容，复查
-    if (!hasUnshown(settings.preferredTags)) return this.reschedule(RECHECK_MS)
+    const eligible = settings.aiReaction.demoMode ? (c: TaggedComment) => !!getReactionUrl(c, settings) : undefined
+    if (!hasUnshown(settings.preferredTags, eligible)) return this.reschedule(RECHECK_MS)
 
     // 6) 正常推送
-    const comment = pickNext(settings.preferredTags)
+    const comment = pickNext(settings.preferredTags, eligible)
     if (comment) {
       this.emit(comment)
       this.dailyCount++

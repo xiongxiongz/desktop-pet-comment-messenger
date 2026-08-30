@@ -7,11 +7,14 @@
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
+    "postinstall": "electron-builder install-app-deps",
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "collect:initial": "node scripts/collect-initial.mjs",
+    "prepare:demo": "node scripts/prepare-demo.mjs",
     "build:mac": "electron-vite build && electron-builder --mac --universal"
   },
   "dependencies": {

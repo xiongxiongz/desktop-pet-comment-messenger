@@ -27,7 +27,7 @@ body {
   position: absolute;
   right: 24px;
   bottom: 16px;
-  width: 120px;
+  width: 160px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -57,19 +57,21 @@ body {
 }
 
 .pet-body {
-  width: 110px;
-  height: 110px;
+  width: 160px;
+  height: 160px;
   animation: bob 3s ease-in-out infinite;
 }
 .pet-body.frame-scale {
-  width: calc(110px * var(--frame-scale, 1));
-  height: calc(110px * var(--frame-scale, 1));
+  width: calc(160px * var(--frame-scale, 1));
+  height: calc(160px * var(--frame-scale, 1));
 }
 .pet-body.custom-skin-active {
-  overflow: hidden;
+  /* 矩形/动作图不再 overflow:hidden，角色描边与边缘不再被框裁掉 */
 }
 .pet-body.custom-skin-circle {
   border-radius: 50%;
+  /* 仅圆形皮肤需要裁切成圆 */
+  overflow: hidden;
 }
 .pet-body.custom-skin-circle .custom-skin {
   object-fit: cover;
@@ -108,10 +110,11 @@ body {
 .bubble {
   position: absolute;
   right: 12px;
-  bottom: 150px;
+  /* 底锚随桌宠实际占用高度浮动（applySettings 写入 --pet-occupied），放大到 200% 也不会被桌宠盖住 */
+  bottom: calc(var(--pet-occupied, 150px) + 12px);
   width: 300px;
-  /* 气泡向上生长，上限收敛到窗口内（150px 底锚 + 12px 顶部留白），避免长文顶部被裁切 */
-  max-height: calc(100vh - 162px);
+  /* 气泡向上生长，上限收敛到窗口内，避免长文顶部被裁切 */
+  max-height: calc(100vh - var(--pet-occupied, 150px) - 24px);
   display: flex;
   flex-direction: column;
   background: #fff;

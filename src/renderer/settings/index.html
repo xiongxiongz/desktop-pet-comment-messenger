@@ -12,6 +12,7 @@
       <nav class="tabs">
         <button id="tabSettings" type="button" class="tab active" data-tab="settings">设置</button>
         <button id="tabFavorites" type="button" class="tab" data-tab="favorites">收藏</button>
+        <button id="tabLogs" type="button" class="tab" data-tab="logs">日志</button>
       </nav>
 
       <div id="panelSettings" class="panel active">
@@ -70,6 +71,23 @@
         </section>
 
         <section class="card">
+          <h2>AI 动作生成</h2>
+          <label class="row">开启动作生成<input id="aiReactionEnabled" type="checkbox" /></label>
+          <label class="row">Demo 模式（仅推送已有动作图）<input id="aiReactionDemoMode" type="checkbox" /></label>
+          <div class="ai-reference-row">
+            <button id="btnChooseAiReference" type="button" class="mini">选择 AI 动作参考图</button>
+            <button id="btnDeleteAiReference" type="button" class="mini" hidden>删除参考图</button>
+            <button id="btnPreheatAiReaction" type="button" class="mini">预热 Demo 动作</button>
+          </div>
+          <img id="aiReferencePreview" class="ai-reference-preview" alt="AI 动作参考图预览" hidden />
+          <div id="aiReactionProgressWrap" class="ai-reaction-progress" hidden>
+            <div class="ai-reaction-progress-head"><span id="aiReactionProgressLabel">动作生成</span><span id="aiReactionProgressText"></span></div>
+            <progress id="aiReactionProgress" max="1" value="0"></progress>
+          </div>
+          <p id="aiReactionHint" class="hint">上传静态 PNG，图片将用于生成透明背景的动作图。</p>
+        </section>
+
+        <section class="card">
           <h2>想看的评论类型</h2>
           <div id="tags" class="tags"></div>
         </section>
@@ -93,6 +111,7 @@
           <h2>智能分类（默认启用）</h2>
           <label class="row">启用大模型分类 (glm-5.2)<input id="llmEnabled" type="checkbox" /></label>
           <label>网关 API Key<input id="llmKey" type="password" placeholder="留空则用 .env 或纯规则" /></label>
+          <button id="btnTestLlmKey" type="button" class="mini">测试连接</button>
           <p id="llmHint" class="hint"></p>
         </section>
 
@@ -111,6 +130,17 @@
             <button id="btnRefreshFav" type="button" class="mini">刷新</button>
           </div>
           <div id="favList" class="fav-list"></div>
+        </section>
+      </div>
+
+      <div id="panelLogs" class="panel">
+        <section class="card">
+          <div class="card-head">
+            <h2>大模型日志</h2>
+            <button id="btnRefreshLogs" type="button" class="mini">刷新</button>
+          </div>
+          <p class="hint">记录评论分类、动作分析和动作图生成请求。</p>
+          <div id="llmLogList" class="llm-log-list"></div>
         </section>
       </div>
 

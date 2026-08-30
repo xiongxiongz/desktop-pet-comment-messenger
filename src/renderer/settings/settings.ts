@@ -6,6 +6,17 @@ const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) 
 
 const petName = $<HTMLInputElement>('petName')
 const skin = $<HTMLSelectElement>('skin')
+const aiReactionEnabled = $<HTMLInputElement>('aiReactionEnabled')
+const aiReactionDemoMode = $<HTMLInputElement>('aiReactionDemoMode')
+const btnChooseAiReference = $<HTMLButtonElement>('btnChooseAiReference')
+const btnDeleteAiReference = $<HTMLButtonElement>('btnDeleteAiReference')
+const btnPreheatAiReaction = $<HTMLButtonElement>('btnPreheatAiReaction')
+const aiReferencePreview = $<HTMLImageElement>('aiReferencePreview')
+const aiReactionHint = $<HTMLParagraphElement>('aiReactionHint')
+const aiReactionProgressWrap = $<HTMLDivElement>('aiReactionProgressWrap')
+const aiReactionProgressLabel = $<HTMLSpanElement>('aiReactionProgressLabel')
+const aiReactionProgressText = $<HTMLSpanElement>('aiReactionProgressText')
+const aiReactionProgress = $<HTMLProgressElement>('aiReactionProgress')
 const customSkinField = $<HTMLDivElement>('customSkinField')
 const btnImportSkin = $<HTMLButtonElement>('btnImportSkin')
 const customSkinPreviewStage = $<HTMLDivElement>('customSkinPreviewStage')
@@ -48,15 +59,34 @@ const maxInterval = $<HTMLInputElement>('maxInterval')
 const llmEnabled = $<HTMLInputElement>('llmEnabled')
 const llmKey = $<HTMLInputElement>('llmKey')
 const llmHint = $<HTMLParagraphElement>('llmHint')
+const btnTestLlmKey = $<HTMLButtonElement>('btnTestLlmKey')
 const btnFilter = $<HTMLButtonElement>('btnFilter')
 const filterResult = $<HTMLParagraphElement>('filterResult')
 const btnPushOne = $<HTMLButtonElement>('btnPushOne')
 const btnRefreshFav = $<HTMLButtonElement>('btnRefreshFav')
 const favList = $<HTMLDivElement>('favList')
+const btnRefreshLogs = $<HTMLButtonElement>('btnRefreshLogs')
+const llmLogList = $<HTMLDivElement>('llmLogList')
 const saveStatus = $<HTMLSpanElement>('saveStatus')
 
 let selectedTags = new Set<CommentTag>()
 let customSkinUrl: string | null = null
+let aiReferenceFile = ''
+
+api.onAiReactionProgress((progress) => {
+  if (progress.phase === 'idle') {
+    aiReactionProgressWrap.hidden = true
+    return
+  }
+  aiReactionProgressWrap.hidden = false
+  aiReactionProgressLabel.textContent = progress.phase === 'analyzing' ? '分析评论' : progress.phase === 'generating' ? '生成动作图' : '动作生成完成'
+  aiReactionProgress.max = Math.max(1, progress.total)
+  aiReactionProgress.value = Math.min(progress.completed, progress.total)
+  aiReactionProgressText.textContent = progress.phase === 'complete'
+    ? progress.failed ? `失败 ${progress.failed} 条` : '完成'
+    : `${progress.completed}/${progress.total}${progress.failed ? ` · 失败 ${progress.failed}` : ''}`
+  if (progress.phase === 'complete') setTimeout(() => { aiReactionProgressWrap.hidden = true }, 2500)
+})
 let customSkins: SettingsView['customSkins'] = []
 let customSkinFolders: SettingsView['customSkinFolders'] = []
 let selectedCustomSkinId = ''
@@ -75,7 +105,7 @@ let cropLastX = 0
 let cropLastY = 0
 
 const PET_DISPLAY_SIZE = 110
-const defaultPlacement = (): SkinPlacement => ({ scale: 100, offsetX: 0, offsetY: 0, scaleMode: 'content' })
+const defaultPlacement = (): SkinPlacement => ({ scale: 100, offsetX: 0, offsetY: 0, scaleMode: 'frame' })
 
 function currentScaleMode(): SkinPlacement['scaleMode'] {
   return btnFrameScaleMode.classList.contains('active') ? 'frame' : 'content'
@@ -511,6 +541,16 @@ function fill(view: SettingsView): void {
   minInterval.value = String(view.minIntervalSec)
   maxInterval.value = String(view.maxIntervalSec)
   llmEnabled.checked = view.llmEnabled
+  aiReactionEnabled.checked = view.aiReactionEnabled
+  aiReactionDemoMode.checked = view.aiReactionDemoMode
+  aiReferenceFile = view.aiReactionHasReference ? 'reference.png' : ''
+  aiReactionEnabled.disabled = !view.aiReactionHasReference
+  btnDeleteAiReference.hidden = !view.aiReactionHasReference
+  aiReferencePreview.hidden = !view.aiReactionReferenceUrl
+  aiReferencePreview.src = view.aiReactionReferenceUrl ?? ''
+  aiReactionHint.textContent = view.aiReactionHasReference
+    ? '已设置静态 PNG 参考图。动作图会临时替换桌宠皮肤。'
+    : '上传静态 PNG，图片将用于生成透明背景的动作图。'
   updateLlmHint(view)
 }
 
@@ -534,6 +574,7 @@ function collect(): Partial<Settings> {
     dailyCap: Math.max(1, Number(dailyCap.value) || 20),
     minIntervalSec: Math.max(5, Number(minInterval.value) || 30),
     maxIntervalSec: Math.max(5, Number(maxInterval.value) || 120)
+    ,aiReaction: { enabled: aiReactionEnabled.checked, referenceFile: aiReferenceFile, demoMode: aiReactionDemoMode.checked }
   }
   const llmPatch: Partial<Settings['llm']> = { enabled: llmEnabled.checked }
   if (llmKey.value.trim()) llmPatch.apiKey = llmKey.value.trim()
@@ -556,9 +597,29 @@ function debouncedSave(): void {
 }
 
 for (const el of [petName, llmKey]) el.addEventListener('input', debouncedSave)
-for (const el of [skin, pushEnabled, activeStart, activeEnd, dndStart, dndEnd, dailyCap, minInterval, maxInterval, llmEnabled]) {
+for (const el of [skin, pushEnabled, activeStart, activeEnd, dndStart, dndEnd, dailyCap, minInterval, maxInterval, llmEnabled, aiReactionEnabled, aiReactionDemoMode]) {
   el.addEventListener('change', () => void save())
 }
+btnChooseAiReference.addEventListener('click', async () => {
+  btnChooseAiReference.disabled = true
+  try {
+    const view = await api.chooseAiReactionReference()
+    if (view) fill(view)
+  } finally { btnChooseAiReference.disabled = false }
+})
+btnDeleteAiReference.addEventListener('click', async () => fill(await api.deleteAiReactionReference()))
+btnPreheatAiReaction.addEventListener('click', async () => {
+  btnPreheatAiReaction.disabled = true
+  aiReactionHint.textContent = '正在预热 Demo 动作，请保持应用运行…'
+  try {
+    const result = await api.preheatAiReactions()
+    aiReactionHint.textContent = result.generated > 0
+      ? `Demo 已就绪：缓存 ${result.generated} 张动作图，可开启 Demo 模式体验。`
+      : '没有生成动作图，请确认评论包含明确动作或情绪。'
+  } catch (err) {
+    aiReactionHint.textContent = err instanceof Error ? `预热失败：${err.message}` : '预热失败，请稍后重试。'
+  } finally { btnPreheatAiReaction.disabled = false }
+})
 skin.addEventListener('change', () => {
   setAdjustmentControls(activePlacement())
   renderCustomSkinControl()
@@ -587,7 +648,7 @@ btnSkinRight.addEventListener('click', () => moveSkinBy(4, 0))
 btnSkinDown.addEventListener('click', () => moveSkinBy(0, 4))
 btnSkinReset.addEventListener('click', () => {
   customSkinScale.value = '100'
-  setScaleMode('content')
+  setScaleMode('frame')
   setSkinOffset(0, 0)
   rememberActivePlacement()
   void save()
@@ -678,14 +739,34 @@ btnConfirmSkinCrop.addEventListener('click', async () => {
 btnFilter.addEventListener('click', async () => {
   btnFilter.disabled = true
   filterResult.textContent = '筛选中…'
-  await save()
   try {
+    await save()
     const res = await api.runFilterBatch()
-    filterResult.textContent = `已从 ${res.total} 条中筛选出 ${res.filtered} 条（${res.usedLlm ? 'glm-5.2 语义分类' : '规则分类'}）`
-  } catch {
+    if (res.llmError) {
+      filterResult.textContent = `LLM 调用失败（${res.llmError}），已回退规则分类，共从 ${res.total} 条中筛选出 ${res.filtered} 条`
+    } else {
+      filterResult.textContent = `已从 ${res.total} 条中筛选出 ${res.filtered} 条（${res.usedLlm ? 'glm-5.2 语义分类' : '规则分类'}）`
+    }
+  } catch (err) {
+    console.warn('[settings] 筛选失败:', err)
     filterResult.textContent = '筛选失败，请重试'
   } finally {
     btnFilter.disabled = false
+  }
+})
+btnTestLlmKey.addEventListener('click', async () => {
+  btnTestLlmKey.disabled = true
+  llmHint.textContent = '正在测试连接…'
+  try {
+    await save()
+    const r = await api.testLlmKey()
+    llmHint.textContent = r.ok
+      ? 'Key 有效，已启用 glm-5.2 语义分类。'
+      : `Key 校验失败：${r.error ?? '未知错误'}，将回退规则分类。`
+  } catch (err) {
+    llmHint.textContent = `测试失败：${err instanceof Error ? err.message : '请稍后重试'}`
+  } finally {
+    btnTestLlmKey.disabled = false
   }
 })
 btnPushOne.addEventListener('click', async () => {
@@ -735,19 +816,65 @@ async function renderFavorites(): Promise<void> {
 }
 
 btnRefreshFav.addEventListener('click', () => void renderFavorites())
+function logOperationLabel(operation: string): string {
+  return operation === 'classification' ? '评论分类' : operation === 'reaction-analysis' ? '动作分析' : operation === 'image-generation' ? '动作图生成' : operation
+}
+
+function prettyJson(value: string): string {
+  try { return JSON.stringify(JSON.parse(value), null, 2) } catch { return value }
+}
+
+async function renderLlmLogs(): Promise<void> {
+  const items = await api.listLlmLogs()
+  llmLogList.replaceChildren()
+  if (items.length === 0) {
+    const empty = document.createElement('p')
+    empty.className = 'hint'
+    empty.textContent = '还没有大模型操作记录。'
+    llmLogList.appendChild(empty)
+    return
+  }
+  for (const item of items) {
+    const entry = document.createElement('details')
+    entry.className = 'llm-log-item'
+    const summary = document.createElement('summary')
+    const title = document.createElement('strong')
+    title.textContent = logOperationLabel(item.operation)
+    const meta = document.createElement('span')
+    meta.textContent = `${item.model} · ${new Date(item.createdAt).toLocaleString()} · ${item.commentIds.length} 条评论`
+    summary.append(title, meta)
+    const body = document.createElement('div')
+    body.className = 'llm-log-body'
+    const input = document.createElement('pre')
+    input.textContent = `评论输入\n${prettyJson(item.input)}`
+    const prompt = document.createElement('pre')
+    prompt.textContent = `Prompt\n${item.prompt}`
+    const result = document.createElement('pre')
+    result.textContent = item.error ? `错误\n${item.error}` : `模型结果\n${prettyJson(item.result)}`
+    if (item.error) result.classList.add('error')
+    body.append(input, prompt, result)
+    entry.append(summary, body)
+    llmLogList.appendChild(entry)
+  }
+}
+
+btnRefreshLogs.addEventListener('click', () => void renderLlmLogs())
 const tabs = document.querySelectorAll<HTMLButtonElement>('.tab')
-const panels = { settings: $<HTMLDivElement>('panelSettings'), favorites: $<HTMLDivElement>('panelFavorites') }
+const panels = { settings: $<HTMLDivElement>('panelSettings'), favorites: $<HTMLDivElement>('panelFavorites'), logs: $<HTMLDivElement>('panelLogs') }
 for (const tab of tabs) {
   tab.addEventListener('click', () => {
     const target = tab.dataset.tab as keyof typeof panels
     tabs.forEach((entry) => entry.classList.toggle('active', entry === tab))
     panels.settings.classList.toggle('active', target === 'settings')
     panels.favorites.classList.toggle('active', target === 'favorites')
+    panels.logs.classList.toggle('active', target === 'logs')
     if (target === 'favorites') void renderFavorites()
+    if (target === 'logs') void renderLlmLogs()
   })
 }
 
 void (async () => {
   fill(await api.loadSettings())
   await renderFavorites()
+  await renderLlmLogs()
 })()

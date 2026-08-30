@@ -11,6 +11,8 @@ extraResources:
     to: comments.json
   - from: local-data/collections.sqlite
     to: collections.sqlite
+  - from: local-data/demo-reference.png
+    to: demo-reference.png
 mac:
   target:
     - target: dmg

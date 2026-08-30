@@ -74,6 +74,46 @@ CREATE TABLE IF NOT EXISTS collection_runs (
   comment_pages INTEGER NOT NULL,
   danmaku_pages_json TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS reaction_cache (
+  cache_key TEXT PRIMARY KEY,
+  comment_id TEXT NOT NULL,
+  reference_hash TEXT NOT NULL,
+  prompt_version INTEGER NOT NULL,
+  visual_prompt TEXT NOT NULL,
+  image_png BLOB NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS llm_classification_cache (
+  cache_key TEXT PRIMARY KEY,
+  comment_id TEXT NOT NULL,
+  text_hash TEXT NOT NULL,
+  model TEXT NOT NULL,
+  result_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reaction_analysis_cache (
+  cache_key TEXT PRIMARY KEY,
+  comment_id TEXT NOT NULL,
+  text_hash TEXT NOT NULL,
+  model TEXT NOT NULL,
+  result_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS llm_operation_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  operation TEXT NOT NULL,
+  model TEXT NOT NULL,
+  comment_ids_json TEXT NOT NULL,
+  input_json TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  result_json TEXT NOT NULL,
+  error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
 `
 
 export function openCollectionDatabase(dbPath) {

@@ -35,17 +35,17 @@ export function size(): number {
 }
 
 /** 从偏好标签内、未展示过的评论里随机取一条；无则返回 null（不推空内容） */
-export function pickNext(preferredTags: CommentTag[]): TaggedComment | null {
+export function pickNext(preferredTags: CommentTag[], eligible?: (comment: TaggedComment) => boolean): TaggedComment | null {
   const candidates = items.filter(
-    (c) => preferredTags.includes(c.tag) && !shownIds.has(c.id)
+    (c) => preferredTags.includes(c.tag) && !shownIds.has(c.id) && (!eligible || eligible(c))
   )
   if (candidates.length === 0) return null
   return candidates[Math.floor(Math.random() * candidates.length)]
 }
 
 /** 是否还有可推送的未展示评论 */
-export function hasUnshown(preferredTags: CommentTag[]): boolean {
-  return items.some((c) => preferredTags.includes(c.tag) && !shownIds.has(c.id))
+export function hasUnshown(preferredTags: CommentTag[], eligible?: (comment: TaggedComment) => boolean): boolean {
+  return items.some((c) => preferredTags.includes(c.tag) && !shownIds.has(c.id) && (!eligible || eligible(c)))
 }
 
 export function findById(id: string): TaggedComment | undefined {

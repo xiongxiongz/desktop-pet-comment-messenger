@@ -21,9 +21,13 @@ const btnSkip = document.getElementById('btn-skip') as HTMLButtonElement
 let current: PushPayload | null = null
 let bubbleTimer: ReturnType<typeof setTimeout> | null = null
 let hasShownStartupGreeting = false
+let latestSettings: SettingsView | null = null
+let reactionToken = 0
 
 // ---- 皮肤与名称 ----
 function applySettings(s: SettingsView): void {
+  latestSettings = s
+  reactionToken++
   petName.textContent = s.petName
   petBody.classList.remove('custom-skin-circle', 'frame-scale')
   const actualSkin = s.skin === 'custom' && !s.customSkinUrl ? 'cat' : s.skin
@@ -43,10 +47,7 @@ function applySettings(s: SettingsView): void {
     image.alt = '默认动图皮肤'
     image.draggable = false
     petBody.replaceChildren(image)
-    return
-  }
-
-  if (s.skin === 'custom' && s.customSkinUrl) {
+  } else if (s.skin === 'custom' && s.customSkinUrl) {
     petBody.classList.add('custom-skin-active')
     petBody.classList.toggle('custom-skin-circle', s.customSkins.find((item) => item.id === s.selectedCustomSkinId)?.shape === 'circle')
     const image = document.createElement('img')
@@ -56,12 +57,18 @@ function applySettings(s: SettingsView): void {
     // 图片默认会触发浏览器原生拖拽，导致中间区域无法交给桌宠的长按拖动处理。
     image.draggable = false
     petBody.replaceChildren(image)
-    return
+  } else {
+    // 用户选择自定义图片但尚未上传时，保留默认猫作为可见回退。
+    petBody.classList.add('custom-skin-active')
+    petBody.innerHTML = getSkinSvg((s.skin === 'custom' ? 'cat' : s.skin) as SkinId)
   }
+  syncBubbleAnchor()
+}
 
-  // 用户选择自定义图片但尚未上传时，保留默认猫作为可见回退。
-  petBody.classList.add('custom-skin-active')
-  petBody.innerHTML = getSkinSvg((s.skin === 'custom' ? 'cat' : s.skin) as SkinId)
+/** 气泡底锚随桌宠实际占用高度浮动，放大到 200% 也不会被桌宠盖住。 */
+function syncBubbleAnchor(): void {
+  // 桌宠底部锚定 bottom:16px，故占用 = offsetHeight + 16。
+  document.documentElement.style.setProperty('--pet-occupied', `${petEl.offsetHeight + 16}px`)
 }
 
 async function refreshSettings(): Promise<void> {
@@ -199,6 +206,7 @@ function showBubble(payload: PushPayload): void {
   btnFav.classList.toggle('active', payload.favorited)
   btnFav.textContent = payload.favorited ? '★ 已收藏' : '☆ 收藏'
   bubble.classList.remove('hidden')
+  void playReaction(payload.reactionImageUrl)
   // 命中区扩大：气泡显示期间也需可交互（已 bindClickThrough）
 
   // 自动收起（给足阅读时间）
@@ -221,12 +229,40 @@ function showStartupGreeting(name: string): void {
 }
 
 function hideBubble(): void {
+  reactionToken++
+  if (latestSettings) applySettings(latestSettings)
   bubble.classList.add('hidden')
   current = null
   if (bubbleTimer) {
     clearTimeout(bubbleTimer)
     bubbleTimer = null
   }
+}
+
+async function playReaction(url?: string): Promise<void> {
+  const token = ++reactionToken
+  // 无动作图：恢复默认皮肤，避免上一条评论的动作图延续到当前评论
+  if (!url) {
+    if (latestSettings) applySettings(latestSettings)
+    return
+  }
+  const image = document.createElement('img')
+  image.className = 'custom-skin reaction-skin'
+  image.alt = 'AI 动作'
+  image.draggable = false
+  image.src = url
+  try {
+    await image.decode()
+  } catch {
+    // 解码失败同样恢复默认皮肤，不留旧图
+    if (token === reactionToken && latestSettings) applySettings(latestSettings)
+    return
+  }
+  if (token !== reactionToken || !current) return
+  petBody.classList.add('custom-skin-active')
+  // 动作图按原图完整显示：去掉圆形皮肤的裁切，避免角色边缘被裁成圆
+  petBody.classList.remove('custom-skin-circle')
+  petBody.replaceChildren(image)
 }
 
 btnSkip.addEventListener('click', () => {

@@ -4,6 +4,8 @@ import type { CandidateSkinView, CustomSkinShape,
   FilterResult,
   PushOneResult,
   PushPayload,
+  AiReactionProgress,
+  LlmOperationLog,
   Settings,
   SettingsView, SkinPlacement
 } from '../main/types'
@@ -27,9 +29,14 @@ const api = {
   renameCustomSkinFolder: (id: string, name: string): Promise<SettingsView | null> => ipcRenderer.invoke('skin:folder-rename', id, name),
   deleteCustomSkinFolder: (id: string): Promise<SettingsView | null> => ipcRenderer.invoke('skin:folder-delete', id),
   moveCustomSkin: (skinId: string, folderId: string): Promise<SettingsView | null> => ipcRenderer.invoke('skin:move', skinId, folderId),
+  chooseAiReactionReference: (): Promise<SettingsView | null> => ipcRenderer.invoke('ai-reaction:choose-reference'),
+  deleteAiReactionReference: (): Promise<SettingsView> => ipcRenderer.invoke('ai-reaction:delete-reference'),
+  preheatAiReactions: (): Promise<{ generated: number; candidates: number }> => ipcRenderer.invoke('ai-reaction:preheat-demo'),
+  testLlmKey: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('llm:test-key'),
   runFilterBatch: (): Promise<FilterResult> => ipcRenderer.invoke('filter:run'),
   requestOnePush: (): Promise<PushOneResult> => ipcRenderer.invoke('push:one'),
   listFavorites: (): Promise<FavoriteItem[]> => ipcRenderer.invoke('favorites:list'),
+  listLlmLogs: (): Promise<LlmOperationLog[]> => ipcRenderer.invoke('llm-logs:list'),
   closeSettings: (): void => ipcRenderer.send('settings:close-self'),
 
   // ---- 桌宠侧 ----
@@ -41,6 +48,10 @@ const api = {
   onSettingsChanged: (cb: (view: SettingsView) => void): void => {
     ipcRenderer.removeAllListeners('settings:changed')
     ipcRenderer.on('settings:changed', (_e, view: SettingsView) => cb(view))
+  },
+  onAiReactionProgress: (cb: (progress: AiReactionProgress) => void): void => {
+    ipcRenderer.removeAllListeners('ai-reaction:progress')
+    ipcRenderer.on('ai-reaction:progress', (_e, progress: AiReactionProgress) => cb(progress))
   },
   skipComment: (): void => ipcRenderer.send('comment:skip'),
   favoriteComment: (id: string): Promise<boolean> => ipcRenderer.invoke('comment:favorite', id),

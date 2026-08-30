@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import type {
+  AiReactionProgress,
   Comment, CustomSkinShape,
   FavoriteItem,
   FilterResult,
@@ -11,10 +12,13 @@ import type {
   SettingsView, SkinPlacement
 } from './types'
 import { getState, getSettings, toggleFavorite, updateSettings } from './store'
-import { resolveLlmKey, runFilter } from './filter/pipeline'
+import { enrichReactions, resolveLlmKey, runFilter } from './filter/pipeline'
+import { llmTestKey } from './filter/llmClassifier'
 import { setQueue, size as queueSize } from './queue'
 import { loadCollectedComments } from './collection'
 import { scheduler } from './scheduler'
+import { chooseAiReference, deleteAiReference, getReactionUrl, getReferenceUrl, prefetchReactionImages } from './aiReaction'
+import { listLlmOperationLogs } from './llmCache'
 import { beginPetDrag, createSettingsWindow, endPetDrag, getPetWindow, movePetToCursor, setPetClickThrough, showPetContextMenu } from './windows'
 import {
   chooseCustomSkinCandidate,
@@ -44,7 +48,7 @@ function loadComments(): Comment[] {
 
 /** 把内部 Settings 转成暴露给 renderer 的安全视图（llm 只给布尔） */
 function toView(s: Settings): SettingsView {
-  const { llm, customSkinFile: _customSkinFile, customSkins, customSkinFolders, ...rest } = s
+  const { llm, aiReaction: _aiReaction, customSkinFile: _customSkinFile, customSkins, customSkinFolders, ...rest } = s
   const selected = customSkins.find((item) => item.id === s.selectedCustomSkinId)
   const folderIds = new Set(customSkinFolders.map((folder) => folder.id))
   return {
@@ -58,7 +62,11 @@ function toView(s: Settings): SettingsView {
     customSkinFolders: customSkinFolders.map((folder) => ({ id: folder.id, name: folder.name })),
     llmEnabled: llm.enabled,
     llmHasKey: !!resolveLlmKey(s),
-    customSkinUrl: selected ? getLibrarySkinUrl(selected.id, selected) : null
+    customSkinUrl: selected ? getLibrarySkinUrl(selected.id, selected) : null,
+    aiReactionEnabled: s.aiReaction.enabled,
+    aiReactionHasReference: !!getReferenceUrl(s),
+    aiReactionReferenceUrl: getReferenceUrl(s),
+    aiReactionDemoMode: s.aiReaction.demoMode
   }
 }
 
@@ -78,6 +86,12 @@ function notifyPetSettingsChanged(next: Settings): void {
   }
 }
 
+function notifyAiReactionProgress(progress: AiReactionProgress): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send('ai-reaction:progress', progress)
+  }
+}
+
 export function registerIpc(): void {
   ipcMain.handle('settings:load', (): SettingsView => toView(getSettings()))
 
@@ -92,6 +106,24 @@ export function registerIpc(): void {
     const settingsWindow = BrowserWindow.fromWebContents(e.sender)
     if (!settingsWindow) return null
     return chooseCustomSkinCandidate(settingsWindow)
+  })
+
+  ipcMain.handle('ai-reaction:choose-reference', async (e): Promise<SettingsView | null> => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    if (!win) return null
+    const file = await chooseAiReference(win)
+    if (file) {
+      const next = updateSettings({ aiReaction: { ...getSettings().aiReaction, referenceFile: file } })
+      notifyPetSettingsChanged(next)
+      return toView(next)
+    }
+    return toView(getSettings())
+  })
+  ipcMain.handle('ai-reaction:delete-reference', (): SettingsView => {
+    deleteAiReference()
+    const next = updateSettings({ aiReaction: { ...getSettings().aiReaction, referenceFile: '' } })
+    notifyPetSettingsChanged(next)
+    return toView(next)
   })
 
   ipcMain.handle(
@@ -231,7 +263,55 @@ export function registerIpc(): void {
     const settings = getSettings()
     const outcome = await runFilter(loadComments(), settings)
     setQueue(outcome.tagged) // setQueue 内部已清空去重记录，整批可推送
-    return { filtered: queueSize(), total: outcome.total, usedLlm: outcome.usedLlm }
+    if (settings.aiReaction.enabled && settings.aiReaction.referenceFile && resolveLlmKey(settings)) {
+      const analysisTotal = Math.min(outcome.tagged.length, Math.max(1, settings.llm.topK))
+      notifyAiReactionProgress({ phase: 'analyzing', completed: 0, total: analysisTotal, failed: 0 })
+      void enrichReactions(outcome.tagged, settings)
+        .then(() => prefetchReactionImages(outcome.tagged, settings, resolveLlmKey(settings), notifyAiReactionProgress))
+        .then(() => notifyAiReactionProgress({ phase: 'complete', completed: 1, total: 1, failed: 0 }))
+        .catch((err) => {
+          console.warn('[ipc] AI reaction background task failed:', err)
+          notifyAiReactionProgress({ phase: 'complete', completed: 0, total: 1, failed: 1 })
+        })
+    }
+    return { filtered: queueSize(), total: outcome.total, usedLlm: outcome.usedLlm, llmError: outcome.llmError }
+  })
+
+  ipcMain.handle('llm:test-key', async (): Promise<{ ok: boolean; error?: string }> => {
+    const settings = getSettings()
+    const key = resolveLlmKey(settings)
+    if (!key) return { ok: false, error: '未配置 key' }
+    try {
+      await llmTestKey(settings.llm, key)
+      return { ok: true }
+    } catch (err) {
+      const status = (err as { status?: number } | null | undefined)?.status
+      const message = err instanceof Error ? err.message : String(err)
+      if (status === 401 || /invalid_api_key|incorrect api key|unauthorized/i.test(message)) {
+        return { ok: false, error: 'API Key 无效' }
+      }
+      return { ok: false, error: message }
+    }
+  })
+
+  ipcMain.handle('ai-reaction:preheat-demo', async (): Promise<{ generated: number; candidates: number }> => {
+    const settings = getSettings()
+    const key = resolveLlmKey(settings)
+    if (!settings.aiReaction.enabled || !getReferenceUrl(settings) || !key) {
+      throw new Error('请先开启动作生成、设置 AI 动作参考图并配置大模型 Key')
+    }
+    const outcome = await runFilter(loadComments(), settings)
+    setQueue(outcome.tagged)
+    const candidates = outcome.tagged.length
+    const before = outcome.tagged.filter((comment) => comment.reaction?.shouldGenerate).length
+    const analysisTotal = Math.min(candidates, Math.max(1, settings.llm.topK))
+    notifyAiReactionProgress({ phase: 'analyzing', completed: 0, total: analysisTotal, failed: 0 })
+    await enrichReactions(outcome.tagged, settings)
+    await prefetchReactionImages(outcome.tagged, settings, key, notifyAiReactionProgress)
+    const generated = outcome.tagged.filter((comment) => !!getReactionUrl(comment, settings)).length
+    if (before === 0 && generated === 0) notifyAiReactionProgress({ phase: 'complete', completed: 0, total: 1, failed: 0 })
+    else notifyAiReactionProgress({ phase: 'complete', completed: generated, total: Math.max(1, generated), failed: 0 })
+    return { generated, candidates }
   })
 
   ipcMain.handle('push:one', (): PushOneResult => scheduler.pushOne())
@@ -266,6 +346,8 @@ export function registerIpc(): void {
         tag: c.tag
       }))
   })
+
+  ipcMain.handle('llm-logs:list', () => listLlmOperationLogs())
 
   ipcMain.on('comment:skip', () => {
     // 跳过当前气泡：桌宠侧仅关闭气泡，无需 main 逻辑；预留钩子。
